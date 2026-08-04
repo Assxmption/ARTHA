@@ -1,0 +1,180 @@
+{
+  "version": "v5",
+  "generated_at": "2026-07-16T20:00:28.408392Z",
+  "universe_size": 49,
+  "benchmark_sharpe": 0.03372729249140374,
+  "ml_model": {
+    "n_folds": 22,
+    "oos_ic": -0.009506257549116071,
+    "oos_r2": -0.01587567320404274,
+    "n_features": 40,
+    "n_training_samples": 47922,
+    "top_features": [
+      {
+        "name": "mom_1d",
+        "importance": 0.0673761972987469
+      },
+      {
+        "name": "sector_rel_mom",
+        "importance": 0.06232802132159154
+      },
+      {
+        "name": "mom_252d",
+        "importance": 0.05307811201273651
+      },
+      {
+        "name": "sector_rel_vol",
+        "importance": 0.04824023667530808
+      },
+      {
+        "name": "vol_ratio",
+        "importance": 0.039785673219046386
+      },
+      {
+        "name": "mom_12_1",
+        "importance": 0.03951898074687105
+      },
+      {
+        "name": "mom_120d",
+        "importance": 0.038777479358908414
+      },
+      {
+        "name": "mr_sma5",
+        "importance": 0.03734730415174947
+      },
+      {
+        "name": "rsi_z",
+        "importance": 0.0360587937203145
+      },
+      {
+        "name": "obv_momentum",
+        "importance": 0.0357112463102703
+      }
+    ]
+  },
+  "signal_quality": {
+    "n_signals": 40,
+    "n_significant": 13,
+    "top_ics": [
+      {
+        "signal": "mr_sma5",
+        "ic": -0.01999843782956865
+      },
+      {
+        "signal": "mom_3d",
+        "ic": -0.019906027238675326
+      },
+      {
+        "signal": "mom_10d",
+        "ic": -0.019432311796440584
+      },
+      {
+        "signal": "mr_sma20",
+        "ic": -0.017608552100081602
+      },
+      {
+        "signal": "mom_1d",
+        "ic": -0.01573457770478923
+      },
+      {
+        "signal": "mom_5d",
+        "ic": -0.01538463077067405
+      },
+      {
+        "signal": "vwap_dev",
+        "ic": -0.015046395473506427
+      },
+      {
+        "signal": "mr_boll20",
+        "ic": -0.015030179021157707
+      },
+      {
+        "signal": "macd_signal",
+        "ic": -0.014616223103491118
+      },
+      {
+        "signal": "mr_sma60",
+        "ic": -0.013249401719479487
+      },
+      {
+        "signal": "mr_boll60",
+        "ic": -0.012144717673655776
+      },
+      {
+        "signal": "pb_inv",
+        "ic": 0.011584916917324585
+      },
+      {
+        "signal": "mom_60d",
+        "ic": -0.010626692285660882
+      },
+      {
+        "signal": "eps_yield",
+        "ic": 0.009234587998134047
+      },
+      {
+        "signal": "rsi_z",
+        "ic": -0.00868120681052073
+      }
+    ]
+  },
+  "unhedged": {
+    "label": "Unhedged Portfolio",
+    "sharpe": -0.37618169765081666,
+    "sortino": -0.5458993317124056,
+    "ann_return": -0.05222074873118483,
+    "total_return": -0.1072034789430153,
+    "ann_vol": 0.1388178878911268,
+    "max_dd": -0.2236178424450247,
+    "win_rate": 0.48484848484848486,
+    "profit_factor": 0.93861801482291,
+    "calmar": -0.233526753322571,
+    "n_days": 462
+  },
+  "hedged": {
+    "label": "Beta-Neutral (Hedged)",
+    "sharpe": -0.8120395597670055,
+    "sortino": -1.075497416252586,
+    "ann_return": -0.03719439402852243,
+    "total_return": -0.050578875435535964,
+    "ann_vol": 0.04580367247033437,
+    "max_dd": -0.07799693505114746,
+    "win_rate": 0.5029239766081871,
+    "profit_factor": 0.8672375977485498,
+    "calmar": -0.4768699437244777,
+    "n_days": 342
+  },
+  "benchmark": {
+    "label": "NIFTY 50 Benchmark",
+    "sharpe": 0.03372729249140374,
+    "sortino": 0.0503055791198116,
+    "ann_return": 0.004498731994141616,
+    "total_return": -0.007985003521275291,
+    "ann_vol": 0.13338550656825574,
+    "max_dd": -0.1576667830374081,
+    "win_rate": 0.5043290043290043,
+    "profit_factor": 1.0058025789606984,
+    "calmar": 0.028533162835409943,
+    "n_days": 462
+  },
+  "risk_summary": {
+    "current_nav": 0.8927965210569847,
+    "peak_nav": 1.0716186061686288,
+    "drawdown": 0.1668710155668059,
+    "n_returns": 462,
+    "daily_loss_triggers": 23,
+    "drawdown_cooldown_remaining": 5,
+    "vol_5d": 0.09826193296224082,
+    "vol_60d": 0.14676234926595538
+  },
+  "trade_count": 19493,
+  "hedge_metrics": {
+    "avg_beta": 0.9862456565717369,
+    "min_beta": 0.8950185777605335,
+    "max_beta": 1.0485002820752258,
+    "avg_futures_notional": 986245.6565717368,
+    "avg_margin_required": 118349.4787886084,
+    "total_roll_cost_pct": 0.8142857142857143,
+    "hedge_effectiveness": 0.673123517435936
+  }
+}

@@ -1,0 +1,344 @@
+{
+  "generated_at": "2026-07-09T05:17:38.344326+00:00",
+  "version": "v2",
+  "universe_size": 28,
+  "benchmark": {
+    "sharpe": 0.2786,
+    "sortino": 0.382,
+    "annual_return": 0.091149,
+    "max_drawdown": 0.172298,
+    "volatility": 0.138389
+  },
+  "pair_trading": {
+    "total_scanned": 378,
+    "cointegrated": 42,
+    "stable": 11,
+    "backtested": 11,
+    "validated": 0,
+    "pairs": [
+      {
+        "pair": "BAJAJ-AUTO/SUNPHARMA",
+        "stability": "MODERATE",
+        "p_value": 0.01450259539803604,
+        "half_life": 33.0403006113687,
+        "recent_hl": 16.57653918701993,
+        "sharpe": 0.8106,
+        "sortino": 1.2017,
+        "return": 0.371761,
+        "max_dd": 0.867522,
+        "win_rate": 0.4703,
+        "n_trades": 1178,
+        "validated": "False"
+      },
+      {
+        "pair": "DRREDDY/POWERGRID",
+        "stability": "STRONG",
+        "p_value": 0.0014128764595694313,
+        "half_life": 25.397110167325952,
+        "recent_hl": 5.492447379099395,
+        "sharpe": 0.4282,
+        "sortino": 0.6062,
+        "return": 0.150795,
+        "max_dd": 0.544106,
+        "win_rate": 0.4618,
+        "n_trades": 1178,
+        "validated": "False"
+      },
+      {
+        "pair": "DRREDDY/ONGC",
+        "stability": "MODERATE",
+        "p_value": 0.0005245370521433669,
+        "half_life": 22.69074046572689,
+        "recent_hl": Infinity,
+        "sharpe": 0.4099,
+        "sortino": 0.5611,
+        "return": 0.058577,
+        "max_dd": 0.786744,
+        "win_rate": 0.4576,
+        "n_trades": 1178,
+        "validated": "False"
+      },
+      {
+        "pair": "HINDUNILVR/ITC",
+        "stability": "MODERATE",
+        "p_value": 0.049889130740034926,
+        "half_life": 38.5404933764222,
+        "recent_hl": 12.542646905125627,
+        "sharpe": 0.3153,
+        "sortino": 0.4383,
+        "return": 0.109346,
+        "max_dd": 0.29371,
+        "win_rate": 0.4555,
+        "n_trades": 1179,
+        "validated": "False"
+      },
+      {
+        "pair": "NTPC/ONGC",
+        "stability": "MODERATE",
+        "p_value": 0.004175293393626005,
+        "half_life": 25.107364884524152,
+        "recent_hl": 6.516308304385771,
+        "sharpe": -0.14,
+        "sortino": -0.2058,
+        "return": -0.076282,
+        "max_dd": 0.600694,
+        "win_rate": 0.4334,
+        "n_trades": 1179,
+        "validated": "False"
+      },
+      {
+        "pair": "KOTAKBANK/POWERGRID",
+        "stability": "MODERATE",
+        "p_value": 0.03550516396575654,
+        "half_life": 36.267771591701,
+        "recent_hl": Infinity,
+        "sharpe": -0.2224,
+        "sortino": -0.3395,
+        "return": -0.01402,
+        "max_dd": 0.313917,
+        "win_rate": 0.4813,
+        "n_trades": 1178,
+        "validated": "False"
+      },
+      {
+        "pair": "AXISBANK/NESTLEIND",
+        "stability": "MODERATE",
+        "p_value": 0.0017113285934961054,
+        "half_life": 21.48429674805129,
+        "recent_hl": 19.10980855097299,
+        "sharpe": -0.2487,
+        "sortino": -0.3679,
+        "return": -0.049076,
+        "max_dd": 0.392512,
+        "win_rate": 0.447,
+        "n_trades": 1179,
+        "validated": "False"
+      },
+      {
+        "pair": "KOTAKBANK/M&M",
+        "stability": "MODERATE",
+        "p_value": 0.015628666999250466,
+        "half_life": 30.54981506939991,
+        "recent_hl": 12.74906949470475,
+        "sharpe": -0.2922,
+        "sortino": -0.4307,
+        "return": -0.033396,
+        "max_dd": 0.354626,
+        "win_rate": 0.4936,
+        "n_trades": 1179,
+        "validated": "False"
+      },
+      {
+        "pair": "KOTAKBANK/TCS",
+        "stability": "MODERATE",
+        "p_value": 0.02222738712461867,
+        "half_life": 33.65499114179582,
+        "recent_hl": 12.28916002276833,
+        "sharpe": -0.3081,
+        "sortino": -0.4547,
+        "return": -0.037752,
+        "max_dd": 0.367331,
+        "win_rate": 0.4911,
+        "n_trades": 1179,
+        "validated": "False"
+      },
+      {
+        "pair": "KOTAKBANK/WIPRO",
+        "stability": "MODERATE",
+        "p_value": 0.03589060379620532,
+        "half_life": 37.31550369093908,
+        "recent_hl": 12.032253522620435,
+        "sharpe": -0.3843,
+        "sortino": -0.5633,
+        "return": -0.05046,
+        "max_dd": 0.363277,
+        "win_rate": 0.486,
+        "n_trades": 1179,
+        "validated": "False"
+      },
+      {
+        "pair": "DRREDDY/HEROMOTOCO",
+        "stability": "STRONG",
+        "p_value": 0.017813587886270153,
+        "half_life": 37.36395977319658,
+        "recent_hl": 6.627464570130431,
+        "sharpe": -0.5577,
+        "sortino": -0.7794,
+        "return": -0.078914,
+        "max_dd": 0.505473,
+        "win_rate": 0.4873,
+        "n_trades": 1178,
+        "validated": "False"
+      }
+    ]
+  },
+  "factor_longshort": {
+    "sharpe": -3.8138,
+    "sortino": -4.7664,
+    "annual_return": -0.971314,
+    "max_drawdown": 0.597991,
+    "volatility": 0.844847,
+    "win_rate": 0.4583,
+    "profit_factor": 0.5166,
+    "validated": "False",
+    "months": 48,
+    "long_sharpe": 0.9401,
+    "short_sharpe": -3.8707,
+    "holdings": [
+      {
+        "date": "2026-02-28",
+        "longs": [
+          "NESTLEIND",
+          "BANKBARODA",
+          "BRITANNIA",
+          "SBIN",
+          "TCS"
+        ],
+        "shorts": [
+          "SUNPHARMA",
+          "CIPLA",
+          "WIPRO",
+          "INDUSINDBK",
+          "ADANIGREEN"
+        ],
+        "long_ret": 0.006825879206495089,
+        "short_ret": 0.028333706235304533,
+        "port_ret": -0.024507827028809444
+      },
+      {
+        "date": "2026-03-31",
+        "longs": [
+          "NESTLEIND",
+          "BRITANNIA",
+          "BANKBARODA",
+          "SBIN",
+          "HEROMOTOCO"
+        ],
+        "shorts": [
+          "TECHM",
+          "CIPLA",
+          "WIPRO",
+          "INDUSINDBK",
+          "ADANIGREEN"
+        ],
+        "long_ret": -0.14325564436413343,
+        "short_ret": -0.10015032443062888,
+        "port_ret": -0.04610531993350456
+      },
+      {
+        "date": "2026-04-30",
+        "longs": [
+          "NESTLEIND",
+          "BRITANNIA",
+          "TCS",
+          "HEROMOTOCO",
+          "ONGC"
+        ],
+        "shorts": [
+          "MARUTI",
+          "WIPRO",
+          "TECHM",
+          "INDUSINDBK",
+          "ADANIGREEN"
+        ],
+        "long_ret": 0.08113061032322469,
+        "short_ret": 0.1908314667250952,
+        "port_ret": -0.11270085640187053
+      },
+      {
+        "date": "2026-05-31",
+        "longs": [
+          "NESTLEIND",
+          "BRITANNIA",
+          "ONGC",
+          "NTPC",
+          "TCS"
+        ],
+        "shorts": [
+          "M&M",
+          "MARUTI",
+          "HDFCBANK",
+          "INDUSINDBK",
+          "ADANIGREEN"
+        ],
+        "long_ret": -0.06714646489639339,
+        "short_ret": 0.02689188341668538,
+        "port_ret": -0.09703834831307878
+      },
+      {
+        "date": "2026-06-30",
+        "longs": [
+          "NESTLEIND",
+          "BRITANNIA",
+          "ONGC",
+          "TCS",
+          "NTPC"
+        ],
+        "shorts": [
+          "CIPLA",
+          "M&M",
+          "HDFCBANK",
+          "ADANIGREEN",
+          "INDUSINDBK"
+        ],
+        "long_ret": -0.06327717614343939,
+        "short_ret": 0.035328175795205086,
+        "port_ret": -0.10160535193864448
+      },
+      {
+        "date": "2026-07-31",
+        "longs": [
+          "NESTLEIND",
+          "BRITANNIA",
+          "BAJAJ-AUTO",
+          "NTPC",
+          "BANKBARODA"
+        ],
+        "shorts": [
+          "INFY",
+          "WIPRO",
+          "TECHM",
+          "HCLTECH",
+          "INDUSINDBK"
+        ],
+        "long_ret": -0.0015323816565542935,
+        "short_ret": 0.05730319564693205,
+        "port_ret": -0.06183557730348635
+      }
+    ]
+  },
+  "regime_combined": {
+    "current_regime": "SIDEWAYS",
+    "allocation": {
+      "pairs": 0.6,
+      "factor": 0.4
+    },
+    "regime_stats": {
+      "BEAR": {
+        "daily_mean_return": 0.0001607135864296598,
+        "daily_mean_volatility": 0.010218075235900048,
+        "annualized_return_pct": 4.05,
+        "annualized_volatility_pct": 16.22,
+        "stationary_probability": 4.978524650181667e-25
+      },
+      "SIDEWAYS": {
+        "daily_mean_return": 0.00034003553329269145,
+        "daily_mean_volatility": 0.00813419229222941,
+        "annualized_return_pct": 8.57,
+        "annualized_volatility_pct": 12.91,
+        "stationary_probability": 0.4981603207116887
+      },
+      "BULL": {
+        "daily_mean_return": 0.00034013103071923464,
+        "daily_mean_volatility": 0.008132447019243044,
+        "annualized_return_pct": 8.57,
+        "annualized_volatility_pct": 12.91,
+        "stationary_probability": 0.5018396792883114
+      }
+    },
+    "regime_transitions": 1215,
+    "total_validated_signals": 0,
+    "pair_validated": 0,
+    "factor_validated": 0
+  }
+}

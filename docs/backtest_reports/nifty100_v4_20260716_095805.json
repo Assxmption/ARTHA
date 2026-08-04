@@ -1,0 +1,245 @@
+{
+  "version": "v4",
+  "generated_at": "2026-07-16T09:58:05.509095+00:00",
+  "universe_size": 45,
+  "benchmark_sharpe": 0.2573,
+  "combined_strategy": {
+    "total_sharpe": 0.6789,
+    "total_sortino": 0.8942,
+    "total_return": 0.146932,
+    "total_max_dd": 0.179803,
+    "total_vol": 0.128294,
+    "total_validated": "False",
+    "total_win_rate": 0.5274,
+    "total_profit_factor": 1.2197,
+    "total_calmar": 0.8172,
+    "alpha_sharpe": -0.12,
+    "vt_sharpe": 0.7838,
+    "vt_return": 0.180464,
+    "vt_max_dd": 0.17783,
+    "vt_validated": "False",
+    "benchmark_sharpe": 0.3388,
+    "regime_performance": {
+      "BULL": {
+        "sharpe": 0.6789,
+        "return": 0.146932,
+        "vol": 0.128294,
+        "days": 1039
+      }
+    },
+    "n_days": 1039,
+    "n_rebalances": 208,
+    "n_stocks": 45
+  },
+  "pair_trading": {
+    "total_scanned": 990,
+    "cointegrated": 47,
+    "backtested": 23,
+    "validated": 0,
+    "pairs": [
+      {
+        "pair": "DRREDDY/POWERGRID",
+        "type": "CROSS",
+        "half_life": 14.041056789949073,
+        "sharpe": 0.3094,
+        "return": 0.103534,
+        "max_dd": 0.17675,
+        "validated": "False"
+      },
+      {
+        "pair": "LT/TATASTEEL",
+        "type": "CROSS",
+        "half_life": 17.62000703707661,
+        "sharpe": 0.0587,
+        "return": 0.044193,
+        "max_dd": 0.457698,
+        "validated": "False"
+      },
+      {
+        "pair": "DRREDDY/ONGC",
+        "type": "CROSS",
+        "half_life": 13.913879922716898,
+        "sharpe": -0.0358,
+        "return": 0.029474,
+        "max_dd": 0.35057,
+        "validated": "False"
+      },
+      {
+        "pair": "BRITANNIA/SBILIFE",
+        "type": "CROSS",
+        "half_life": 13.567077242197039,
+        "sharpe": -0.1449,
+        "return": 0.013949,
+        "max_dd": 0.204017,
+        "validated": "False"
+      },
+      {
+        "pair": "AXISBANK/WIPRO",
+        "type": "CROSS",
+        "half_life": 16.237423204833803,
+        "sharpe": -0.1508,
+        "return": 0.007992,
+        "max_dd": 0.453873,
+        "validated": "False"
+      },
+      {
+        "pair": "BRITANNIA/RELIANCE",
+        "type": "CROSS",
+        "half_life": 13.336519807103636,
+        "sharpe": -0.2918,
+        "return": -0.022496,
+        "max_dd": 0.26243,
+        "validated": "False"
+      },
+      {
+        "pair": "HINDALCO/JSWSTEEL",
+        "type": "INTRA",
+        "half_life": 15.45812714095969,
+        "sharpe": -0.3709,
+        "return": -0.02361,
+        "max_dd": 0.308533,
+        "validated": "False"
+      },
+      {
+        "pair": "GRASIM/WIPRO",
+        "type": "CROSS",
+        "half_life": 11.558804847478362,
+        "sharpe": -0.4161,
+        "return": -0.039065,
+        "max_dd": 0.395514,
+        "validated": "False"
+      },
+      {
+        "pair": "AXISBANK/SBIN",
+        "type": "INTRA",
+        "half_life": 17.371534551759698,
+        "sharpe": -0.4165,
+        "return": -0.021357,
+        "max_dd": 0.302206,
+        "validated": "False"
+      },
+      {
+        "pair": "DIVISLAB/INFY",
+        "type": "CROSS",
+        "half_life": 19.79258255067926,
+        "sharpe": -0.5094,
+        "return": -0.046386,
+        "max_dd": 0.451815,
+        "validated": "False"
+      },
+      {
+        "pair": "CIPLA/ITC",
+        "type": "CROSS",
+        "half_life": 13.353091275191074,
+        "sharpe": -0.5096,
+        "return": -0.053443,
+        "max_dd": 0.396348,
+        "validated": "False"
+      },
+      {
+        "pair": "DIVISLAB/TCS",
+        "type": "CROSS",
+        "half_life": 17.863269211884223,
+        "sharpe": -0.5524,
+        "return": -0.046932,
+        "max_dd": 0.454022,
+        "validated": "False"
+      },
+      {
+        "pair": "BAJAJFINSV/KOTAKBANK",
+        "type": "CROSS",
+        "half_life": 9.703084651187272,
+        "sharpe": -0.5782,
+        "return": -0.140836,
+        "max_dd": 0.579374,
+        "validated": "False"
+      },
+      {
+        "pair": "RELIANCE/SBILIFE",
+        "type": "CROSS",
+        "half_life": 14.656392295336525,
+        "sharpe": -0.5792,
+        "return": -0.046033,
+        "max_dd": 0.346481,
+        "validated": "False"
+      },
+      {
+        "pair": "GRASIM/NESTLEIND",
+        "type": "CROSS",
+        "half_life": 11.598259977450326,
+        "sharpe": -0.583,
+        "return": -0.053064,
+        "max_dd": 0.341757,
+        "validated": "False"
+      },
+      {
+        "pair": "ADANIPORTS/NESTLEIND",
+        "type": "CROSS",
+        "half_life": 10.64973224052477,
+        "sharpe": -0.6047,
+        "return": -0.058883,
+        "max_dd": 0.298822,
+        "validated": "False"
+      },
+      {
+        "pair": "HINDALCO/SBIN",
+        "type": "CROSS",
+        "half_life": 25.92529844028787,
+        "sharpe": -0.7033,
+        "return": -0.071058,
+        "max_dd": 0.404818,
+        "validated": "False"
+      },
+      {
+        "pair": "BANKBARODA/LT",
+        "type": "CROSS",
+        "half_life": 12.193296487207562,
+        "sharpe": -0.7688,
+        "return": -0.098049,
+        "max_dd": 0.57497,
+        "validated": "False"
+      },
+      {
+        "pair": "KOTAKBANK/POWERGRID",
+        "type": "CROSS",
+        "half_life": 16.716484742752794,
+        "sharpe": -0.7884,
+        "return": -0.081578,
+        "max_dd": 0.475298,
+        "validated": "False"
+      },
+      {
+        "pair": "BHARTIARTL/M&M",
+        "type": "CROSS",
+        "half_life": 14.949879240307903,
+        "sharpe": -0.8561,
+        "return": -0.088748,
+        "max_dd": 0.41388,
+        "validated": "False"
+      }
+    ]
+  },
+  "regime_stats": {
+    "BEAR": {
+      "daily_mean_return": 0.00016515383413800546,
+      "daily_mean_volatility": 0.010214895397781101,
+      "annualized_return_pct": 4.16,
+      "annualized_volatility_pct": 16.22,
+      "stationary_probability": 4.910937736559814e-25
+    },
+    "SIDEWAYS": {
+      "daily_mean_return": 0.00033534636144504966,
+      "daily_mean_volatility": 0.008139375234964373,
+      "annualized_return_pct": 8.45,
+      "annualized_volatility_pct": 12.92,
+      "stationary_probability": 0.498160018850579
+    },
+    "BULL": {
+      "daily_mean_return": 0.00033702144835977564,
+      "daily_mean_volatility": 0.008139070907391749,
+      "annualized_return_pct": 8.49,
+      "annualized_volatility_pct": 12.92,
+      "stationary_probability": 0.501839981149421
+    }
+  }
+}

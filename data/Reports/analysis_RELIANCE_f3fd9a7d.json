@@ -1,0 +1,53 @@
+{
+  "job_id": "analysis_RELIANCE_f3fd9a7d",
+  "symbol": "RELIANCE",
+  "status": "completed",
+  "duration_seconds": 4.7,
+  "stages": {
+    "fundamentals": {
+      "status": "ok",
+      "facts_written": 119,
+      "statement_metrics": 89,
+      "market_metrics": 30,
+      "fiscal_years": [
+        2022,
+        2023,
+        2024,
+        2025,
+        2026
+      ]
+    },
+    "quant_injection": {
+      "status": "ok",
+      "signals_written": 4
+    },
+    "fundamentals_narration": {
+      "status": "error",
+      "error": "litellm.RateLimitError: RateLimitError: GroqException - {\"error\":{\"message\":\"Request too large for model `llama-3.1-8b-instant` in organization `org_01kvq4nnpbe2f9pa9xxfe50v8d` service tier `on_demand` on tokens per minute (TPM): Limit 6000, Requested 7682, please reduce your message size and try again. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing\",\"type\":\"tokens\",\"code\":\"rate_limit_exceeded\"}}\n"
+    },
+    "quant_narration": {
+      "status": "ok"
+    },
+    "risk_checks": {
+      "status": "ok",
+      "flags": 1,
+      "blocks": 0,
+      "warnings": 0
+    },
+    "risk_narration": {
+      "status": "skipped"
+    },
+    "writer": {
+      "status": "error",
+      "error": "404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/gemini-2.5-flash-preview-05-20 is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.', 'status': 'NOT_FOUND'}}",
+      "fallback": true
+    }
+  },
+  "fact_counts": {
+    "fundamental": 119,
+    "narrative": 1,
+    "quant_signal": 4,
+    "risk_flag": 1
+  },
+  "report_file": "data/Reports/analysis_RELIANCE_f3fd9a7d.md"
+}

@@ -1,0 +1,51 @@
+{
+  "job_id": "analysis_HDFCBANK_6bb588e2",
+  "symbol": "HDFCBANK",
+  "status": "completed",
+  "duration_seconds": 1.1,
+  "stages": {
+    "fundamentals": {
+      "status": "ok",
+      "facts_written": 30,
+      "fiscal_years": [
+        2022,
+        2023,
+        2024,
+        2025,
+        2026
+      ]
+    },
+    "quant_injection": {
+      "status": "ok",
+      "signals_written": 4
+    },
+    "fundamentals_narration": {
+      "status": "error",
+      "error": "Completions.create() got an unexpected keyword argument 'num_retries'"
+    },
+    "quant_narration": {
+      "status": "ok"
+    },
+    "risk_checks": {
+      "status": "ok",
+      "flags": 1,
+      "blocks": 0,
+      "warnings": 0
+    },
+    "risk_narration": {
+      "status": "skipped"
+    },
+    "writer": {
+      "status": "error",
+      "error": "Completions.create() got an unexpected keyword argument 'num_retries'",
+      "fallback": true
+    }
+  },
+  "fact_counts": {
+    "fundamental": 30,
+    "narrative": 1,
+    "quant_signal": 4,
+    "risk_flag": 1
+  },
+  "report_file": "data/Reports/analysis_HDFCBANK_6bb588e2.md"
+}

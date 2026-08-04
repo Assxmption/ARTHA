@@ -1,0 +1,57 @@
+{
+  "job_id": "analysis_RELIANCE_c759faab",
+  "symbol": "RELIANCE",
+  "status": "completed",
+  "duration_seconds": 6.2,
+  "stages": {
+    "fundamentals": {
+      "status": "ok",
+      "facts_written": 119,
+      "statement_metrics": 89,
+      "market_metrics": 30,
+      "fiscal_years": [
+        2022,
+        2023,
+        2024,
+        2025,
+        2026
+      ]
+    },
+    "quant_injection": {
+      "status": "ok",
+      "signals_written": 4
+    },
+    "fundamentals_narration": {
+      "status": "ok"
+    },
+    "quant_narration": {
+      "status": "ok"
+    },
+    "risk_checks": {
+      "status": "ok",
+      "flags": 1,
+      "blocks": 0,
+      "warnings": 0
+    },
+    "risk_narration": {
+      "status": "skipped"
+    },
+    "writer": {
+      "status": "ok",
+      "report_length": 2628,
+      "citations": {
+        "valid": true,
+        "total_citations": 1,
+        "resolved": 1,
+        "unresolved": []
+      }
+    }
+  },
+  "fact_counts": {
+    "fundamental": 119,
+    "narrative": 2,
+    "quant_signal": 4,
+    "risk_flag": 1
+  },
+  "report_file": "data/Reports/analysis_RELIANCE_c759faab.md"
+}

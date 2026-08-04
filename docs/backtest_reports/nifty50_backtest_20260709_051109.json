@@ -1,0 +1,618 @@
+{
+  "generated_at": "2026-07-09T05:11:09.595733+00:00",
+  "universe_size": 29,
+  "regime": {
+    "current_regime": "SIDEWAYS",
+    "statistics": {
+      "BEAR": {
+        "daily_mean_return": 0.0001607135864296598,
+        "daily_mean_volatility": 0.010218075235900048,
+        "annualized_return_pct": 4.05,
+        "annualized_volatility_pct": 16.22,
+        "stationary_probability": 4.978524650181667e-25
+      },
+      "SIDEWAYS": {
+        "daily_mean_return": 0.00034003553329269145,
+        "daily_mean_volatility": 0.00813419229222941,
+        "annualized_return_pct": 8.57,
+        "annualized_volatility_pct": 12.91,
+        "stationary_probability": 0.4981603207116887
+      },
+      "BULL": {
+        "daily_mean_return": 0.00034013103071923464,
+        "daily_mean_volatility": 0.008132447019243044,
+        "annualized_return_pct": 8.57,
+        "annualized_volatility_pct": 12.91,
+        "stationary_probability": 0.5018396792883114
+      }
+    },
+    "distribution": {
+      "BULL": 607,
+      "SIDEWAYS": 607
+    }
+  },
+  "statarb": {
+    "pairs": [
+      {
+        "sector": "Banking",
+        "symbol_a": "AXISBANK",
+        "symbol_b": "BANKBARODA",
+        "p_value": 0.006129213252470887,
+        "half_life": 24.955934446929593,
+        "hedge_ratio": 2.8670022082485818,
+        "latest_z": 2.173452936534247,
+        "latest_signal": "SHORT_A_LONG_B"
+      },
+      {
+        "sector": "Banking",
+        "symbol_a": "KOTAKBANK",
+        "symbol_b": "SBIN",
+        "p_value": 0.02840297780342945,
+        "half_life": 33.80847815519693,
+        "hedge_ratio": 0.06471654340305819,
+        "latest_z": 0.662320204236024,
+        "latest_signal": "NEUTRAL"
+      },
+      {
+        "sector": "Energy",
+        "symbol_a": "ONGC",
+        "symbol_b": "POWERGRID",
+        "p_value": 0.0008517206843605405,
+        "half_life": 20.615631262843678,
+        "hedge_ratio": 0.8314057300988025,
+        "latest_z": 1.1201926157256545,
+        "latest_signal": "NEUTRAL"
+      },
+      {
+        "sector": "Energy",
+        "symbol_a": "NTPC",
+        "symbol_b": "ONGC",
+        "p_value": 0.004175293393626005,
+        "half_life": 25.107364884524152,
+        "hedge_ratio": 1.5753550217600194,
+        "latest_z": 1.1927898918811108,
+        "latest_signal": "NEUTRAL"
+      },
+      {
+        "sector": "Energy",
+        "symbol_a": "NTPC",
+        "symbol_b": "POWERGRID",
+        "p_value": 0.01472586372638207,
+        "half_life": 25.93688135739684,
+        "hedge_ratio": 1.3593200593057755,
+        "latest_z": 1.0223131402709675,
+        "latest_signal": "NEUTRAL"
+      },
+      {
+        "sector": "FMCG",
+        "symbol_a": "HINDUNILVR",
+        "symbol_b": "ITC",
+        "p_value": 0.049889130740034926,
+        "half_life": 38.5404933764222,
+        "hedge_ratio": 1.0734106962230756,
+        "latest_z": 0.1191382750706278,
+        "latest_signal": "EXIT"
+      }
+    ]
+  },
+  "factor_rankings": {
+    "rankings": [
+      {
+        "rank": 1,
+        "symbol": "NESTLEIND",
+        "composite_alpha": 0.86,
+        "momentum_z": 1.2424,
+        "low_vol_z": 0.4775,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 2,
+        "symbol": "SBIN",
+        "composite_alpha": 0.839,
+        "momentum_z": 1.6332,
+        "low_vol_z": 0.0449,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 3,
+        "symbol": "BAJAJ-AUTO",
+        "composite_alpha": 0.8039,
+        "momentum_z": 1.5097,
+        "low_vol_z": 0.0982,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 4,
+        "symbol": "NTPC",
+        "composite_alpha": 0.7759,
+        "momentum_z": 0.6181,
+        "low_vol_z": 0.9338,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 5,
+        "symbol": "SUNPHARMA",
+        "composite_alpha": 0.6158,
+        "momentum_z": 0.5384,
+        "low_vol_z": 0.6932,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 6,
+        "symbol": "POWERGRID",
+        "composite_alpha": 0.449,
+        "momentum_z": 0.1526,
+        "low_vol_z": 0.7454,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 7,
+        "symbol": "ONGC",
+        "composite_alpha": 0.3597,
+        "momentum_z": 0.7643,
+        "low_vol_z": -0.0449,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 8,
+        "symbol": "AXISBANK",
+        "composite_alpha": 0.2674,
+        "momentum_z": 0.7309,
+        "low_vol_z": -0.1961,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 9,
+        "symbol": "ICICIBANK",
+        "composite_alpha": 0.2472,
+        "momentum_z": -0.444,
+        "low_vol_z": 0.9383,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 10,
+        "symbol": "HEROMOTOCO",
+        "composite_alpha": 0.1715,
+        "momentum_z": 1.3297,
+        "low_vol_z": -0.9867,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 11,
+        "symbol": "BRITANNIA",
+        "composite_alpha": 0.0841,
+        "momentum_z": -0.356,
+        "low_vol_z": 0.5243,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 12,
+        "symbol": "MARUTI",
+        "composite_alpha": 0.0478,
+        "momentum_z": 0.4817,
+        "low_vol_z": -0.3862,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 13,
+        "symbol": "CIPLA",
+        "composite_alpha": 0.0109,
+        "momentum_z": -0.269,
+        "low_vol_z": 0.2908,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 14,
+        "symbol": "HINDUNILVR",
+        "composite_alpha": -0.0077,
+        "momentum_z": -0.4276,
+        "low_vol_z": 0.4121,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 15,
+        "symbol": "KOTAKBANK",
+        "composite_alpha": -0.0085,
+        "momentum_z": -0.1996,
+        "low_vol_z": 0.1827,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 16,
+        "symbol": "DRREDDY",
+        "composite_alpha": -0.0165,
+        "momentum_z": 0.0539,
+        "low_vol_z": -0.0869,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 17,
+        "symbol": "RELIANCE",
+        "composite_alpha": -0.0189,
+        "momentum_z": -0.6053,
+        "low_vol_z": 0.5675,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 18,
+        "symbol": "BANKBARODA",
+        "composite_alpha": -0.1213,
+        "momentum_z": 0.8428,
+        "low_vol_z": -1.0854,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 19,
+        "symbol": "HDFCBANK",
+        "composite_alpha": -0.3555,
+        "momentum_z": -1.3287,
+        "low_vol_z": 0.6177,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 20,
+        "symbol": "INDUSINDBK",
+        "composite_alpha": -0.4056,
+        "momentum_z": 0.59,
+        "low_vol_z": -1.4012,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 21,
+        "symbol": "ITC",
+        "composite_alpha": -0.477,
+        "momentum_z": -1.6874,
+        "low_vol_z": 0.7335,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 22,
+        "symbol": "M&M",
+        "composite_alpha": -0.6118,
+        "momentum_z": -0.0539,
+        "low_vol_z": -1.1696,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 23,
+        "symbol": "TECHM",
+        "composite_alpha": -0.629,
+        "momentum_z": -0.14,
+        "low_vol_z": -1.118,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 24,
+        "symbol": "ADANIGREEN",
+        "composite_alpha": -0.8964,
+        "momentum_z": 2.6886,
+        "low_vol_z": -4.4814,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 25,
+        "symbol": "WIPRO",
+        "composite_alpha": -1.042,
+        "momentum_z": -1.4281,
+        "low_vol_z": -0.6558,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 26,
+        "symbol": "TCS",
+        "composite_alpha": -1.3762,
+        "momentum_z": -1.9746,
+        "low_vol_z": -0.7779,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 27,
+        "symbol": "HCLTECH",
+        "composite_alpha": -1.3848,
+        "momentum_z": -1.6661,
+        "low_vol_z": -1.1034,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      },
+      {
+        "rank": 28,
+        "symbol": "INFY",
+        "composite_alpha": -1.458,
+        "momentum_z": -1.4704,
+        "low_vol_z": -1.4456,
+        "value_z": 0.0,
+        "quality_z": 0.0
+      }
+    ]
+  },
+  "backtest": {
+    "benchmark": {
+      "sharpe": 0.2786,
+      "annual_return": 0.091149,
+      "max_drawdown": 0.172298,
+      "volatility": 0.138389
+    },
+    "stocks": {
+      "M&M": {
+        "sharpe": 0.9848,
+        "sortino": 1.564,
+        "annual_return": 0.343125,
+        "max_drawdown": 0.280902,
+        "volatility": 0.280315,
+        "win_rate": 0.5263,
+        "validated": "False"
+      },
+      "SUNPHARMA": {
+        "sharpe": 0.9294,
+        "sortino": 1.4989,
+        "annual_return": 0.256714,
+        "max_drawdown": 0.191286,
+        "volatility": 0.205922,
+        "win_rate": 0.5283,
+        "validated": "False"
+      },
+      "NTPC": {
+        "sharpe": 0.9092,
+        "sortino": 1.3481,
+        "annual_return": 0.291505,
+        "max_drawdown": 0.323023,
+        "volatility": 0.25259,
+        "win_rate": 0.5182,
+        "validated": "False"
+      },
+      "BAJAJ-AUTO": {
+        "sharpe": 0.7643,
+        "sortino": 1.1183,
+        "annual_return": 0.237164,
+        "max_drawdown": 0.423135,
+        "volatility": 0.240086,
+        "win_rate": 0.5291,
+        "validated": "False"
+      },
+      "BANKBARODA": {
+        "sharpe": 0.7335,
+        "sortino": 1.0298,
+        "annual_return": 0.281864,
+        "max_drawdown": 0.321842,
+        "volatility": 0.337017,
+        "win_rate": 0.5141,
+        "validated": "False"
+      },
+      "POWERGRID": {
+        "sharpe": 0.7319,
+        "sortino": 1.0891,
+        "annual_return": 0.235507,
+        "max_drawdown": 0.29559,
+        "volatility": 0.253295,
+        "win_rate": 0.5065,
+        "validated": "False"
+      },
+      "SBIN": {
+        "sharpe": 0.689,
+        "sortino": 0.9385,
+        "annual_return": 0.219107,
+        "max_drawdown": 0.239441,
+        "volatility": 0.247898,
+        "win_rate": 0.5352,
+        "validated": "False"
+      },
+      "ONGC": {
+        "sharpe": 0.6595,
+        "sortino": 0.9226,
+        "annual_return": 0.238407,
+        "max_drawdown": 0.353035,
+        "volatility": 0.308328,
+        "win_rate": 0.5133,
+        "validated": "False"
+      },
+      "ICICIBANK": {
+        "sharpe": 0.6324,
+        "sortino": 0.9532,
+        "annual_return": 0.180874,
+        "max_drawdown": 0.223298,
+        "volatility": 0.203409,
+        "win_rate": 0.5174,
+        "validated": "False"
+      },
+      "MARUTI": {
+        "sharpe": 0.4511,
+        "sortino": 0.7011,
+        "annual_return": 0.146456,
+        "max_drawdown": 0.288341,
+        "volatility": 0.234537,
+        "win_rate": 0.4996,
+        "validated": "False"
+      },
+      "HEROMOTOCO": {
+        "sharpe": 0.4481,
+        "sortino": 0.7203,
+        "annual_return": 0.150322,
+        "max_drawdown": 0.421579,
+        "volatility": 0.254728,
+        "win_rate": 0.5178,
+        "validated": "False"
+      },
+      "ITC": {
+        "sharpe": 0.3977,
+        "sortino": 0.5813,
+        "annual_return": 0.125048,
+        "max_drawdown": 0.402952,
+        "volatility": 0.200216,
+        "win_rate": 0.5053,
+        "validated": "False"
+      },
+      "NESTLEIND": {
+        "sharpe": 0.395,
+        "sortino": 0.6302,
+        "annual_return": 0.122306,
+        "max_drawdown": 0.219779,
+        "volatility": 0.190319,
+        "win_rate": 0.5069,
+        "validated": "False"
+      },
+      "AXISBANK": {
+        "sharpe": 0.3542,
+        "sortino": 0.5161,
+        "annual_return": 0.121523,
+        "max_drawdown": 0.28027,
+        "volatility": 0.241764,
+        "win_rate": 0.5117,
+        "validated": "False"
+      },
+      "BRITANNIA": {
+        "sharpe": 0.3082,
+        "sortino": 0.4597,
+        "annual_return": 0.105495,
+        "max_drawdown": 0.290232,
+        "volatility": 0.203403,
+        "win_rate": 0.5238,
+        "validated": "False"
+      },
+      "TECHM": {
+        "sharpe": 0.3027,
+        "sortino": 0.4637,
+        "annual_return": 0.109383,
+        "max_drawdown": 0.465672,
+        "volatility": 0.277198,
+        "win_rate": 0.4996,
+        "validated": "False"
+      },
+      "ADANIGREEN": {
+        "sharpe": 0.2998,
+        "sortino": 0.4261,
+        "annual_return": 0.082247,
+        "max_drawdown": 0.844403,
+        "volatility": 0.519629,
+        "win_rate": 0.485,
+        "validated": "False"
+      },
+      "CIPLA": {
+        "sharpe": 0.2658,
+        "sortino": 0.4222,
+        "annual_return": 0.09765,
+        "max_drawdown": 0.283241,
+        "volatility": 0.231254,
+        "win_rate": 0.5061,
+        "validated": "False"
+      },
+      "HCLTECH": {
+        "sharpe": 0.1887,
+        "sortino": 0.258,
+        "annual_return": 0.076854,
+        "max_drawdown": 0.447645,
+        "volatility": 0.250408,
+        "win_rate": 0.5101,
+        "validated": "False"
+      },
+      "RELIANCE": {
+        "sharpe": 0.1419,
+        "sortino": 0.214,
+        "annual_return": 0.067217,
+        "max_drawdown": 0.271758,
+        "volatility": 0.223221,
+        "win_rate": 0.5109,
+        "validated": "False"
+      },
+      "DRREDDY": {
+        "sharpe": 0.0303,
+        "sortino": 0.0426,
+        "annual_return": 0.041716,
+        "max_drawdown": 0.323144,
+        "volatility": 0.219265,
+        "win_rate": 0.5146,
+        "validated": "False"
+      },
+      "INDUSINDBK": {
+        "sharpe": 0.0124,
+        "sortino": 0.0144,
+        "annual_return": 0.003138,
+        "max_drawdown": 0.618603,
+        "volatility": 0.337832,
+        "win_rate": 0.5053,
+        "validated": "False"
+      },
+      "HDFCBANK": {
+        "sharpe": -0.0303,
+        "sortino": -0.0418,
+        "annual_return": 0.030664,
+        "max_drawdown": 0.277767,
+        "volatility": 0.208519,
+        "win_rate": 0.5101,
+        "validated": "False"
+      },
+      "KOTAKBANK": {
+        "sharpe": -0.0696,
+        "sortino": -0.0977,
+        "annual_return": 0.016229,
+        "max_drawdown": 0.299439,
+        "volatility": 0.228924,
+        "win_rate": 0.5053,
+        "validated": "False"
+      },
+      "HINDUNILVR": {
+        "sharpe": -0.2253,
+        "sortino": -0.3337,
+        "annual_return": -0.008113,
+        "max_drawdown": 0.304558,
+        "volatility": 0.203215,
+        "win_rate": 0.4842,
+        "validated": "False"
+      },
+      "INFY": {
+        "sharpe": -0.3064,
+        "sortino": -0.4265,
+        "annual_return": -0.05109,
+        "max_drawdown": 0.481716,
+        "volatility": 0.254937,
+        "win_rate": 0.4956,
+        "validated": "False"
+      },
+      "WIPRO": {
+        "sharpe": -0.3649,
+        "sortino": -0.5052,
+        "annual_return": -0.066518,
+        "max_drawdown": 0.500158,
+        "volatility": 0.257325,
+        "win_rate": 0.4947,
+        "validated": "False"
+      },
+      "TCS": {
+        "sharpe": -0.4477,
+        "sortino": -0.6255,
+        "annual_return": -0.062208,
+        "max_drawdown": 0.533934,
+        "volatility": 0.21966,
+        "win_rate": 0.485,
+        "validated": "False"
+      }
+    },
+    "validated_count": 0,
+    "total_count": 28
+  }
+}
