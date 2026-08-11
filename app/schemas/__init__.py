@@ -2,10 +2,17 @@
 Schemas Package
 """
 from app.schemas.models import (
-    ResearchRequest,
-    ResearchResponse,
-    JobStatus,
-    ReportSummary,
+    AnalysisRequest,
+    AnalysisResponse,
+    AnalysisJobStatus,
+    JobStatusType,
+    HealthResponse,
 )
 
-__all__ = ["ResearchRequest", "ResearchResponse", "JobStatus", "ReportSummary"]
+__all__ = [
+    "AnalysisRequest",
+    "AnalysisResponse",
+    "AnalysisJobStatus",
+    "JobStatusType",
+    "HealthResponse",
+]

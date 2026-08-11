@@ -1,14 +1,10 @@
-"""
-Agents Package
-"""
-from app.agents.planner import create_planner_agent
-from app.agents.researcher import create_researcher_agent
-from app.agents.verifier import create_verifier_agent
-from app.agents.writer import create_writer_agent
+from app.agents.fundamentals_agent import run_fundamentals_analysis
+from app.agents.risk_agent import run_risk_checks, run_risk_narration
+from app.agents.quant_narrator_agent import run_quant_narration
 
 __all__ = [
-    "create_planner_agent",
-    "create_researcher_agent",
-    "create_verifier_agent",
-    "create_writer_agent",
+    "run_fundamentals_analysis",
+    "run_risk_checks",
+    "run_risk_narration",
+    "run_quant_narration",
 ]

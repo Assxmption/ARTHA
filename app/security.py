@@ -308,19 +308,25 @@ def apply_security(app: FastAPI) -> None:
     first added is the outermost layer:
       1. Request size limit (reject oversized requests early)
       2. Rate limiter (protect against abuse)
-      3. Security headers (defense-in-depth)
-      4. CORS (access control)
+      3. Supabase JWT auth (identity + route protection)
+      4. Security headers (defense-in-depth)
+      5. CORS (access control)
     """
+    from app.auth import SupabaseAuthMiddleware
+
     # 1. Request size limiter (outermost)
     app.add_middleware(RequestSizeLimitMiddleware)
 
     # 2. Rate limiter
     app.add_middleware(RateLimiterMiddleware)
 
-    # 3. Security headers
+    # 3. Supabase JWT authentication
+    app.add_middleware(SupabaseAuthMiddleware)
+
+    # 4. Security headers
     app.add_middleware(SecurityHeadersMiddleware)
 
-    # 4. CORS (innermost of our middleware, but FastAPI processes it first)
+    # 5. CORS (innermost of our middleware, but FastAPI processes it first)
     configure_cors(app)
 
-    logger.info("Security middleware applied: headers, rate limiting, CORS, size limits")
+    logger.info("Security middleware applied: auth, headers, rate limiting, CORS, size limits")

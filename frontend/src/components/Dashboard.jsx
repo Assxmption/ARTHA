@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import CandlestickChart from './CandlestickChart';
 import OptionsChain from './OptionsChain';
-import { Filter, SlidersHorizontal, Activity, FileText } from 'lucide-react';
+import { Filter, SlidersHorizontal, Activity, FileText, Newspaper } from 'lucide-react';
 
 export default function Dashboard({ theme }) {
   const { symbol } = useParams();
@@ -86,6 +86,12 @@ export default function Dashboard({ theme }) {
           >
             <FileText size={12} /> Fundamentals
           </button>
+          <button 
+            onClick={() => navigate(`/news/${symbol}`)}
+            className="flex items-center gap-2 border border-outline-variant px-3 py-1.5 font-ui text-[10px] uppercase tracking-wider text-on-surface hover:text-primary hover:border-primary transition-colors bg-surface-container flex-1 md:flex-none justify-center"
+          >
+            <Newspaper size={12} /> News
+          </button>
           <button className="flex items-center gap-2 border border-outline-variant px-3 py-1.5 font-ui text-[10px] uppercase tracking-wider text-on-surface hover:border-primary transition-colors flex-1 md:flex-none justify-center">
             <Filter size={12} /> Filter
           </button>
@@ -122,15 +128,15 @@ export default function Dashboard({ theme }) {
               <div className="grid grid-cols-3 gap-4">
                 <div className="border-l-2 border-primary pl-3">
                   <p className="font-ui text-[10px] uppercase text-outline">Market State</p>
-                  <p className="font-mono text-lg text-primary">BULL_VOLATILE</p>
+                  <p className={`font-mono text-lg ${regime.current_regime === 'BULL' ? 'text-secondary' : regime.current_regime === 'BEAR' ? 'text-error' : 'text-primary'}`}>{regime.current_regime || 'UNKNOWN'}</p>
                 </div>
                 <div className="border-l-2 border-outline-variant pl-3">
-                  <p className="font-ui text-[10px] uppercase text-outline">Transition Prob</p>
-                  <p className="font-mono text-lg text-on-surface">14.2%</p>
+                  <p className="font-ui text-[10px] uppercase text-outline">Data Points</p>
+                  <p className="font-mono text-lg text-on-surface">{regime.data_points?.toLocaleString() || 'N/A'}</p>
                 </div>
                 <div className="border-l-2 border-outline-variant pl-3">
-                  <p className="font-ui text-[10px] uppercase text-outline">Last Update</p>
-                  <p className="font-mono text-lg text-on-surface">{regime.generated_at?.split('T')[0] || 'N/A'}</p>
+                  <p className="font-ui text-[10px] uppercase text-outline">Date Range</p>
+                  <p className="font-mono text-sm text-on-surface">{regime.date_range || 'N/A'}</p>
                 </div>
               </div>
             ) : (

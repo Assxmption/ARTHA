@@ -9,70 +9,9 @@ from typing import Optional, Literal
 from pydantic import BaseModel, Field
 
 
-# ── Request Models ─────────────────────────────────────────────────────────────
-
-class ResearchRequest(BaseModel):
-    """Request body for starting a new research job."""
-    query: str = Field(
-        ...,
-        min_length=10,
-        max_length=2000,
-        description="The research question or topic to investigate",
-        examples=[
-            "Compare CrewAI and LangGraph for production AI agent systems",
-            "Analyze the current state of multimodal AI models in 2025",
-        ],
-    )
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "query": "Compare CrewAI and LangGraph for production AI agent systems"
-            }
-        }
-
-
 # ── Response Models ────────────────────────────────────────────────────────────
 
 JobStatusType = Literal["pending", "running", "completed", "failed"]
-
-
-class JobStatus(BaseModel):
-    """Status and result of a research job."""
-    job_id: str
-    query: str
-    status: JobStatusType
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    failed_at: Optional[str] = None
-    duration_seconds: Optional[float] = None
-    report: Optional[str] = None
-    error: Optional[str] = None
-    progress_messages: list[str] = Field(default_factory=list)
-
-
-class ResearchResponse(BaseModel):
-    """Response when a research job is submitted."""
-    job_id: str
-    status: JobStatusType
-    message: str
-    query: str
-
-
-class ReportSummary(BaseModel):
-    """Summary of a saved report for listing."""
-    job_id: str
-    query: str
-    status: str
-    completed_at: Optional[str] = None
-    duration_seconds: Optional[float] = None
-
-
-class ReportListResponse(BaseModel):
-    """Response for listing all reports."""
-    reports: list[ReportSummary]
-    total: int
-
 
 class HealthResponse(BaseModel):
     """Health check response."""
@@ -82,13 +21,6 @@ class HealthResponse(BaseModel):
     search_provider: str
     llm_provider: str
     llm_model: str
-
-
-class SSEMessage(BaseModel):
-    """Server-Sent Events message structure."""
-    event: str
-    data: str
-    job_id: str
 
 
 # ── ARTHA Analysis (Explainer) Models ──────────────────────────────────────────

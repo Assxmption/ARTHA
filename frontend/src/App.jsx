@@ -7,6 +7,8 @@ import Fundamentals from './components/Fundamentals';
 import Auth from './pages/Auth';
 import Home from './pages/Home';
 import Watchlist from './pages/Watchlist';
+import NewsSentiment from './pages/NewsSentiment';
+import Simulator from './pages/Simulator';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -83,6 +85,20 @@ const AppRoutes = () => {
       <Route path="/fundamentals/:symbol" element={
         <ProtectedRoute>
           <Shell><Fundamentals /></Shell>
+        </ProtectedRoute>
+      } />
+
+      {/* NEW: News & Sentiment */}
+      <Route path="/news/:symbol" element={
+        <ProtectedRoute>
+          <Shell><NewsSentiment /></Shell>
+        </ProtectedRoute>
+      } />
+
+      {/* NEW: Trading Simulator / Backtest Lab */}
+      <Route path="/simulator" element={
+        <ProtectedRoute>
+          <Shell><Simulator /></Shell>
         </ProtectedRoute>
       } />
     </Routes>

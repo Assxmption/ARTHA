@@ -1,6 +1,8 @@
 """
 Crew Package
 """
-from app.crew.research_crew import ResearchCrew
+from app.crew.analysis_crew import AnalysisCrew
 
-__all__ = ["ResearchCrew"]
+__all__ = [
+    "AnalysisCrew",
+]
