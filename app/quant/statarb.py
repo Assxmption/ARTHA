@@ -210,16 +210,16 @@ def kalman_hedge_ratio(
     pd.Series
         Time-varying hedge ratios indexed by date.
     """
+    aligned = pd.DataFrame({"a": series_a, "b": series_b}).dropna()
+    if len(aligned) < 20:
+        return pd.Series(dtype=float, name="hedge_ratio")
+        
     try:
         from pykalman import KalmanFilter
     except ImportError:
         logger.warning("pykalman not installed, falling back to static OLS")
         hr = _ols_hedge_ratio(series_a.values, series_b.values)
         return pd.Series(hr, index=series_a.index, name="hedge_ratio")
-
-    aligned = pd.DataFrame({"a": series_a, "b": series_b}).dropna()
-    if len(aligned) < 20:
-        return pd.Series(dtype=float, name="hedge_ratio")
 
     # State: [hedge_ratio, intercept]
     # Observation: a_t = hedge_ratio * b_t + intercept + noise

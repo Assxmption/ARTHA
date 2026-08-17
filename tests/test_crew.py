@@ -126,21 +126,21 @@ class TestAPISchemas:
     """Test Pydantic schemas."""
 
     def test_research_request_valid(self):
-        from app.schemas.models import ResearchRequest
-        req = ResearchRequest(query="Compare CrewAI and LangGraph frameworks")
-        assert req.query == "Compare CrewAI and LangGraph frameworks"
+        from app.schemas.models import AnalysisRequest
+        req = AnalysisRequest(symbol="RELIANCE")
+        assert req.symbol == "RELIANCE"
 
     def test_research_request_too_short(self):
-        from app.schemas.models import ResearchRequest
+        from app.schemas.models import AnalysisRequest
         import pydantic
         with pytest.raises(pydantic.ValidationError):
-            ResearchRequest(query="short")
+            AnalysisRequest(symbol="")
 
     def test_job_status_model(self):
-        from app.schemas.models import JobStatus
-        status = JobStatus(
+        from app.schemas.models import AnalysisJobStatus
+        status = AnalysisJobStatus(
             job_id="test-123",
-            query="Test query for validation",
+            symbol="RELIANCE",
             status="running",
         )
         assert status.job_id == "test-123"
