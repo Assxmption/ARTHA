@@ -1,0 +1,78 @@
+{
+  "timestamp": "20260823_000454",
+  "strategies": {
+    "statarb": {
+      "total_return": "26.67%",
+      "annualized_return": "5.43%",
+      "annualized_vol": "6.87%",
+      "sharpe_ratio": 0.79,
+      "sortino_ratio": 1.0098,
+      "max_drawdown": "9.56%",
+      "calmar_ratio": 0.568,
+      "win_rate": "48.4%",
+      "skewness": -1.0984,
+      "kurtosis": 17.5159,
+      "n_trading_days": 1238,
+      "n_years": 4.91
+    },
+    "momentum": {
+      "total_return": "-24.52%",
+      "annualized_return": "-4.99%",
+      "annualized_vol": "13.10%",
+      "sharpe_ratio": -0.3811,
+      "sortino_ratio": -0.4043,
+      "max_drawdown": "49.64%",
+      "calmar_ratio": -0.1006,
+      "win_rate": "36.8%",
+      "skewness": -1.7971,
+      "kurtosis": 24.9338,
+      "n_trading_days": 1238,
+      "n_years": 4.91
+    },
+    "mean_reversion": {
+      "total_return": "-29.62%",
+      "annualized_return": "-6.03%",
+      "annualized_vol": "19.30%",
+      "sharpe_ratio": -0.3124,
+      "sortino_ratio": -0.3114,
+      "max_drawdown": "70.50%",
+      "calmar_ratio": -0.0855,
+      "win_rate": "24.7%",
+      "skewness": 0.128,
+      "kurtosis": 14.4042,
+      "n_trading_days": 1238,
+      "n_years": 4.91
+    }
+  },
+  "portfolio": {
+    "total_return": "58.32%",
+    "annualized_return": "11.87%",
+    "annualized_vol": "14.60%",
+    "sharpe_ratio": 0.8128,
+    "sortino_ratio": 1.162,
+    "max_drawdown": "26.43%",
+    "calmar_ratio": 0.4492,
+    "win_rate": "49.2%",
+    "skewness": -0.1647,
+    "kurtosis": 5.8656,
+    "n_trading_days": 1238,
+    "n_years": 4.91
+  },
+  "correlation_matrix": {
+    "statarb": {
+      "statarb": 1.0,
+      "momentum": 0.29369789067700786,
+      "mean_reversion": 0.15430889568285783
+    },
+    "momentum": {
+      "statarb": 0.29369789067700786,
+      "momentum": 1.0,
+      "mean_reversion": 0.1248242791399727
+    },
+    "mean_reversion": {
+      "statarb": 0.15430889568285783,
+      "momentum": 0.1248242791399727,
+      "mean_reversion": 1.0
+    }
+  }
+}

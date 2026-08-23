@@ -1,0 +1,153 @@
+{
+  "timestamp": "20260823_191334",
+  "strategies": {
+    "statarb": {
+      "total_return": "26.67%",
+      "annualized_return": "5.43%",
+      "annualized_vol": "6.87%",
+      "sharpe_ratio": 0.79,
+      "sortino_ratio": 1.0098,
+      "max_drawdown": "9.56%",
+      "calmar_ratio": 0.568,
+      "win_rate": "48.4%",
+      "skewness": -1.0984,
+      "kurtosis": 17.5159,
+      "n_trading_days": 1238,
+      "n_years": 4.91
+    },
+    "factors": {
+      "total_return": "15.14%",
+      "annualized_return": "3.08%",
+      "annualized_vol": "12.27%",
+      "sharpe_ratio": 0.2512,
+      "sortino_ratio": 0.3195,
+      "max_drawdown": "29.33%",
+      "calmar_ratio": 0.1051,
+      "win_rate": "38.3%",
+      "skewness": -0.0276,
+      "kurtosis": 8.0076,
+      "n_trading_days": 1238,
+      "n_years": 4.91
+    },
+    "momentum": {
+      "total_return": "16.10%",
+      "annualized_return": "3.28%",
+      "annualized_vol": "11.61%",
+      "sharpe_ratio": 0.2824,
+      "sortino_ratio": 0.3226,
+      "max_drawdown": "24.84%",
+      "calmar_ratio": 0.1319,
+      "win_rate": "45.2%",
+      "skewness": -0.8664,
+      "kurtosis": 10.049,
+      "n_trading_days": 1238,
+      "n_years": 4.91
+    },
+    "mean_reversion": {
+      "total_return": "19.33%",
+      "annualized_return": "3.93%",
+      "annualized_vol": "29.71%",
+      "sharpe_ratio": 0.1324,
+      "sortino_ratio": 0.1091,
+      "max_drawdown": "50.92%",
+      "calmar_ratio": 0.0773,
+      "win_rate": "25.4%",
+      "skewness": -1.6275,
+      "kurtosis": 50.1184,
+      "n_trading_days": 1238,
+      "n_years": 4.91
+    },
+    "trend_following": {
+      "total_return": "22.95%",
+      "annualized_return": "4.67%",
+      "annualized_vol": "7.05%",
+      "sharpe_ratio": 0.6626,
+      "sortino_ratio": 0.6874,
+      "max_drawdown": "20.26%",
+      "calmar_ratio": 0.2306,
+      "win_rate": "37.3%",
+      "skewness": -0.7923,
+      "kurtosis": 11.936,
+      "n_trading_days": 1238,
+      "n_years": 4.91
+    },
+    "st_reversal": {
+      "total_return": "17.46%",
+      "annualized_return": "3.55%",
+      "annualized_vol": "17.62%",
+      "sharpe_ratio": 0.2017,
+      "sortino_ratio": 0.2204,
+      "max_drawdown": "29.45%",
+      "calmar_ratio": 0.1207,
+      "win_rate": "41.7%",
+      "skewness": -0.9535,
+      "kurtosis": 10.9496,
+      "n_trading_days": 1238,
+      "n_years": 4.91
+    }
+  },
+  "portfolio": {
+    "total_return": "50.85%",
+    "annualized_return": "10.35%",
+    "annualized_vol": "10.27%",
+    "sharpe_ratio": 1.0083,
+    "sortino_ratio": 1.3464,
+    "max_drawdown": "20.51%",
+    "calmar_ratio": 0.5045,
+    "win_rate": "52.6%",
+    "skewness": -0.4053,
+    "kurtosis": 7.1815,
+    "n_trading_days": 1238,
+    "n_years": 4.91
+  },
+  "correlation_matrix": {
+    "statarb": {
+      "statarb": 1.0,
+      "factors": -0.12117680806193565,
+      "momentum": 0.22594705008346214,
+      "mean_reversion": 0.09341558633269047,
+      "trend_following": 0.33153438372250416,
+      "st_reversal": 0.32881760782436853
+    },
+    "factors": {
+      "statarb": -0.12117680806193565,
+      "factors": 1.0,
+      "momentum": -0.05409994111032697,
+      "mean_reversion": -0.15478769978410087,
+      "trend_following": -0.2631940991566327,
+      "st_reversal": -0.3559118543598592
+    },
+    "momentum": {
+      "statarb": 0.22594705008346214,
+      "factors": -0.05409994111032697,
+      "momentum": 1.0,
+      "mean_reversion": 0.11394938442583995,
+      "trend_following": 0.277419434552378,
+      "st_reversal": 0.1789198568332266
+    },
+    "mean_reversion": {
+      "statarb": 0.09341558633269047,
+      "factors": -0.15478769978410087,
+      "momentum": 0.11394938442583995,
+      "mean_reversion": 1.0,
+      "trend_following": 0.18442937822389344,
+      "st_reversal": 0.31829495537567587
+    },
+    "trend_following": {
+      "statarb": 0.33153438372250416,
+      "factors": -0.2631940991566327,
+      "momentum": 0.277419434552378,
+      "mean_reversion": 0.18442937822389344,
+      "trend_following": 1.0,
+      "st_reversal": 0.6517467320688826
+    },
+    "st_reversal": {
+      "statarb": 0.32881760782436853,
+      "factors": -0.3559118543598592,
+      "momentum": 0.1789198568332266,
+      "mean_reversion": 0.31829495537567587,
+      "trend_following": 0.6517467320688826,
+      "st_reversal": 1.0
+    }
+  }
+}
