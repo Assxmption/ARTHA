@@ -1,0 +1,213 @@
+{
+  "timestamp": "20260902_114609",
+  "strategies": {
+    "factors": {
+      "total_return": "83.94%",
+      "annualized_return": "6.78%",
+      "annualized_vol": "8.20%",
+      "sharpe_ratio": 0.8263,
+      "sortino_ratio": 0.989,
+      "max_drawdown": "22.55%",
+      "calmar_ratio": 0.3006,
+      "win_rate": "48.7%",
+      "skewness": -0.7877,
+      "kurtosis": 14.1633,
+      "n_trading_days": 3121,
+      "n_years": 12.38
+    },
+    "momentum": {
+      "total_return": "60.69%",
+      "annualized_return": "4.90%",
+      "annualized_vol": "12.67%",
+      "sharpe_ratio": 0.3868,
+      "sortino_ratio": 0.4846,
+      "max_drawdown": "27.71%",
+      "calmar_ratio": 0.1768,
+      "win_rate": "48.6%",
+      "skewness": -0.5892,
+      "kurtosis": 8.1365,
+      "n_trading_days": 3121,
+      "n_years": 12.38
+    },
+    "mean_reversion": {
+      "total_return": "130.85%",
+      "annualized_return": "10.56%",
+      "annualized_vol": "32.47%",
+      "sharpe_ratio": 0.3254,
+      "sortino_ratio": 0.2905,
+      "max_drawdown": "72.60%",
+      "calmar_ratio": 0.1455,
+      "win_rate": "25.3%",
+      "skewness": -0.4401,
+      "kurtosis": 28.2846,
+      "n_trading_days": 3121,
+      "n_years": 12.38
+    },
+    "trend_following": {
+      "total_return": "29.52%",
+      "annualized_return": "2.38%",
+      "annualized_vol": "7.43%",
+      "sharpe_ratio": 0.3208,
+      "sortino_ratio": 0.3379,
+      "max_drawdown": "22.32%",
+      "calmar_ratio": 0.1068,
+      "win_rate": "41.7%",
+      "skewness": -1.0712,
+      "kurtosis": 10.2688,
+      "n_trading_days": 3121,
+      "n_years": 12.38
+    },
+    "st_reversal": {
+      "total_return": "162.96%",
+      "annualized_return": "13.16%",
+      "annualized_vol": "19.22%",
+      "sharpe_ratio": 0.6845,
+      "sortino_ratio": 0.7321,
+      "max_drawdown": "48.04%",
+      "calmar_ratio": 0.2739,
+      "win_rate": "44.9%",
+      "skewness": -1.2493,
+      "kurtosis": 18.97,
+      "n_trading_days": 3121,
+      "n_years": 12.38
+    },
+    "ml_alpha": {
+      "total_return": "85.94%",
+      "annualized_return": "6.94%",
+      "annualized_vol": "9.07%",
+      "sharpe_ratio": 0.7654,
+      "sortino_ratio": 0.8404,
+      "max_drawdown": "16.79%",
+      "calmar_ratio": 0.4132,
+      "win_rate": "38.8%",
+      "skewness": -0.645,
+      "kurtosis": 14.5885,
+      "n_trading_days": 3121,
+      "n_years": 12.38
+    },
+    "hedged_portfolio": {
+      "total_return": "106.26%",
+      "annualized_return": "8.97%",
+      "annualized_vol": "9.02%",
+      "sharpe_ratio": 0.9951,
+      "sortino_ratio": 1.3351,
+      "max_drawdown": "14.87%",
+      "calmar_ratio": 0.6036,
+      "win_rate": "54.5%",
+      "skewness": -0.3942,
+      "kurtosis": 5.3793,
+      "n_trading_days": 2984,
+      "n_years": 11.84
+    },
+    "hedged_vt": {
+      "total_return": "175.23%",
+      "annualized_return": "14.80%",
+      "annualized_vol": "15.38%",
+      "sharpe_ratio": 0.9623,
+      "sortino_ratio": 1.3267,
+      "max_drawdown": "31.04%",
+      "calmar_ratio": 0.4768,
+      "win_rate": "54.5%",
+      "skewness": -0.3498,
+      "kurtosis": 4.757,
+      "n_trading_days": 2984,
+      "n_years": 11.84
+    }
+  },
+  "portfolio": {
+    "total_return": "139.40%",
+    "annualized_return": "11.26%",
+    "annualized_vol": "11.56%",
+    "sharpe_ratio": 0.974,
+    "sortino_ratio": 1.229,
+    "max_drawdown": "19.65%",
+    "calmar_ratio": 0.5727,
+    "win_rate": "55.7%",
+    "skewness": -0.6446,
+    "kurtosis": 6.1813,
+    "n_trading_days": 3121,
+    "n_years": 12.38
+  },
+  "correlation_matrix": {
+    "factors": {
+      "factors": 1.0,
+      "momentum": 0.0871355984608709,
+      "mean_reversion": 0.3108117399387194,
+      "trend_following": 0.7031023580756515,
+      "st_reversal": 0.7249375649914179,
+      "ml_alpha": 0.630897611282527,
+      "hedged_portfolio": 0.5938867850597876,
+      "hedged_vt": 0.5813104567044302
+    },
+    "momentum": {
+      "factors": 0.0871355984608709,
+      "momentum": 1.0,
+      "mean_reversion": 0.02673503061214736,
+      "trend_following": 0.2603732400650323,
+      "st_reversal": 0.0978500222606344,
+      "ml_alpha": 0.15778441839848728,
+      "hedged_portfolio": 0.40063620285001805,
+      "hedged_vt": 0.38610613053176807
+    },
+    "mean_reversion": {
+      "factors": 0.3108117399387194,
+      "momentum": 0.02673503061214736,
+      "mean_reversion": 1.0,
+      "trend_following": 0.2577438207054461,
+      "st_reversal": 0.33501234489989,
+      "ml_alpha": 0.2522383448420087,
+      "hedged_portfolio": 0.31070858352671155,
+      "hedged_vt": 0.30413196802293213
+    },
+    "trend_following": {
+      "factors": 0.7031023580756515,
+      "momentum": 0.2603732400650323,
+      "mean_reversion": 0.2577438207054461,
+      "trend_following": 1.0,
+      "st_reversal": 0.722046350526686,
+      "ml_alpha": 0.5805193343166619,
+      "hedged_portfolio": 0.6469199294886766,
+      "hedged_vt": 0.6439598322929768
+    },
+    "st_reversal": {
+      "factors": 0.7249375649914179,
+      "momentum": 0.0978500222606344,
+      "mean_reversion": 0.33501234489989,
+      "trend_following": 0.722046350526686,
+      "st_reversal": 1.0,
+      "ml_alpha": 0.612502125538413,
+      "hedged_portfolio": 0.6074497563427645,
+      "hedged_vt": 0.6041028737449107
+    },
+    "ml_alpha": {
+      "factors": 0.630897611282527,
+      "momentum": 0.15778441839848728,
+      "mean_reversion": 0.2522383448420087,
+      "trend_following": 0.5805193343166619,
+      "st_reversal": 0.612502125538413,
+      "ml_alpha": 1.0,
+      "hedged_portfolio": 0.44109494074734257,
+      "hedged_vt": 0.42359193263708167
+    },
+    "hedged_portfolio": {
+      "factors": 0.5938867850597876,
+      "momentum": 0.40063620285001805,
+      "mean_reversion": 0.31070858352671155,
+      "trend_following": 0.6469199294886766,
+      "st_reversal": 0.6074497563427645,
+      "ml_alpha": 0.44109494074734257,
+      "hedged_portfolio": 1.0,
+      "hedged_vt": 0.9677818768600361
+    },
+    "hedged_vt": {
+      "factors": 0.5813104567044302,
+      "momentum": 0.38610613053176807,
+      "mean_reversion": 0.30413196802293213,
+      "trend_following": 0.6439598322929768,
+      "st_reversal": 0.6041028737449107,
+      "ml_alpha": 0.42359193263708167,
+      "hedged_portfolio": 0.9677818768600361,
+      "hedged_vt": 1.0
+    }
+  }
+}

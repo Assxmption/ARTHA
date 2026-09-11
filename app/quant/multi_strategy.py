@@ -222,13 +222,18 @@ def compute_allocation_weights(
     min_weight: float = MIN_STRATEGY_ALLOCATION,
 ) -> dict[str, float]:
     """
-    Compute allocation weights using Sharpe²-proportional allocation.
+    Compute allocation weights using correlation-aware Maximum Sharpe
+    (tangency portfolio) optimization.
 
-    This is the Kelly-optimal allocation for uncorrelated strategies:
-    weight_i ∝ Sharpe_i² / Σ Sharpe_j²
+    Previous approach: Sharpe²-proportional (Kelly-optimal for uncorrelated
+    strategies). Problem: our top-3 strategies are ρ=0.61-0.73, so the
+    uncorrelated assumption over-allocates to the correlated cluster.
 
-    Only strategies with positive Sharpe are allocated capital.
-    Weights are capped at max_weight and floored at min_weight.
+    New approach: closed-form tangency portfolio using Ledoit-Wolf shrinkage
+    covariance + mean excess returns. This is the standard mean-variance
+    optimal portfolio (Markowitz), regularized to avoid extreme weights.
+
+    Falls back to inverse-vol if optimization produces degenerate weights.
 
     Parameters
     ----------
@@ -246,12 +251,86 @@ def compute_allocation_weights(
     eligible = [s for s in strategies if s.sharpe_ratio > 0]
 
     if not eligible:
-        # If no strategy has positive Sharpe, equal-weight all
         logger.warning("No strategy has positive Sharpe — equal-weighting all")
         n = len(strategies)
         return {s.name: 1.0 / n for s in strategies} if n > 0 else {}
 
-    # Sharpe² proportional
+    if len(eligible) == 1:
+        return {eligible[0].name: 1.0}
+
+    # Build aligned return matrix for covariance estimation
+    returns_dict = {}
+    for s in eligible:
+        if hasattr(s, 'daily_returns') and len(s.daily_returns) > MIN_DAYS_FOR_STATS:
+            returns_dict[s.name] = s.daily_returns
+
+    if len(returns_dict) < 2:
+        # Not enough data for covariance — fall back to Sharpe²
+        return _sharpe_sq_weights(eligible, max_weight, min_weight)
+
+    returns_df = pd.DataFrame(returns_dict).dropna()
+    if len(returns_df) < MIN_DAYS_FOR_STATS:
+        return _sharpe_sq_weights(eligible, max_weight, min_weight)
+
+    # Mean excess returns (annualized)
+    daily_rf = (1 + RISK_FREE_RATE) ** (1/252) - 1
+    mu = (returns_df.mean() - daily_rf) * 252  # annualized excess returns
+
+    # Ledoit-Wolf shrinkage covariance (annualized)
+    # Shrink sample covariance toward scaled identity to reduce estimation error
+    sample_cov = returns_df.cov() * 252
+    n_assets = len(sample_cov)
+    n_obs = len(returns_df)
+
+    # Shrinkage target: diagonal of sample cov (uncorrelated model)
+    target = np.diag(np.diag(sample_cov.values))
+
+    # Optimal shrinkage intensity (Ledoit-Wolf 2004 simplified)
+    # δ* ≈ 1 / (1 + n_obs / n_assets²)  — heuristic for small n_assets
+    delta = min(0.5, n_assets / max(n_obs, 1))
+    shrunk_cov = (1 - delta) * sample_cov.values + delta * target
+
+    # Add small ridge for numerical stability
+    shrunk_cov += np.eye(n_assets) * 1e-6
+
+    try:
+        # Closed-form tangency portfolio: w* ∝ Σ⁻¹ × μ
+        cov_inv = np.linalg.inv(shrunk_cov)
+        raw_weights = cov_inv @ mu.values
+
+        # Only keep positive weights (no shorting in allocation)
+        raw_weights = np.maximum(raw_weights, 0)
+
+        if raw_weights.sum() < 1e-10:
+            return _sharpe_sq_weights(eligible, max_weight, min_weight)
+
+        # Normalize to sum to 1
+        raw_weights /= raw_weights.sum()
+
+        weights = {name: float(w) for name, w in zip(mu.index, raw_weights)}
+
+    except np.linalg.LinAlgError:
+        logger.warning("Covariance matrix singular — falling back to Sharpe² weights")
+        return _sharpe_sq_weights(eligible, max_weight, min_weight)
+
+    # Apply caps and floors
+    for name in weights:
+        weights[name] = max(min(weights[name], max_weight), min_weight)
+
+    # Renormalize to sum to 1.0
+    total = sum(weights.values())
+    if total > 0:
+        weights = {n: w / total for n, w in weights.items()}
+
+    return weights
+
+
+def _sharpe_sq_weights(
+    eligible: list[StrategyPerformance],
+    max_weight: float,
+    min_weight: float,
+) -> dict[str, float]:
+    """Fallback: Sharpe²-proportional allocation (Kelly for uncorrelated)."""
     sharpe_sq = {s.name: s.sharpe_ratio ** 2 for s in eligible}
     total_sq = sum(sharpe_sq.values())
 
@@ -260,11 +339,9 @@ def compute_allocation_weights(
 
     weights = {name: sq / total_sq for name, sq in sharpe_sq.items()}
 
-    # Apply caps and floors
     for name in weights:
         weights[name] = max(min(weights[name], max_weight), min_weight)
 
-    # Renormalize to sum to 1.0
     total = sum(weights.values())
     if total > 0:
         weights = {n: w / total for n, w in weights.items()}

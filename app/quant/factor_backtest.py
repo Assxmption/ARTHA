@@ -65,6 +65,7 @@ def backtest_factor_model(
     lookback_momentum: int = 252,
     quintile_pct: float = 0.20,
     min_stocks: int = 10,
+    long_only: bool = False,
 ) -> FactorBacktestResult:
     """
     Run a long/short factor backtest on a universe of stocks.
@@ -156,7 +157,7 @@ def backtest_factor_model(
         n_per_leg = max(1, int(len(exposures) * quintile_pct))
 
         long_syms = [e.symbol for e in exposures[:n_per_leg]]
-        short_syms = [e.symbol for e in exposures[-n_per_leg:]]
+        short_syms = [] if long_only else [e.symbol for e in exposures[-n_per_leg:]]
 
         long_history.append(long_syms)
         short_history.append(short_syms)
@@ -199,12 +200,15 @@ def backtest_factor_model(
                         short_ret += r
                         n_short += 1
 
-            # Dollar-neutral: long average - short average
+            # Dollar-neutral (L/S) or long-only
             portfolio_ret = 0.0
             if n_long > 0:
                 portfolio_ret += long_ret / n_long
             if n_short > 0:
                 portfolio_ret -= short_ret / n_short
+            elif long_only and n_long > 0:
+                # Long-only: scale to half exposure (comparable vol to L/S)
+                portfolio_ret *= 0.5
 
             # Transaction costs on rebalance day only
             if d == rebal_idx + 1:
