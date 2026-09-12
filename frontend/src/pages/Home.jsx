@@ -7,18 +7,36 @@ export default function Home() {
   const [watchlist, setWatchlist] = useState([]);
   const [regime, setRegime] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [sortBy, setSortBy] = useState('changePct'); // 'changePct' or 'volume'
 
   useEffect(() => {
+    const checkJson = async (url) => {
+      // Bust cache to ensure we aren't getting a stale Vite index.html fallback
+      const r = await fetch(`${url}${url.includes('?') ? '&' : '?'}cb=${Date.now()}`, {
+        cache: 'no-store'
+      });
+      const contentType = r.headers.get('content-type');
+      if (contentType && contentType.includes('text/html')) {
+        throw new Error(`Endpoint ${url} returned HTML instead of JSON`);
+      }
+      if (!r.ok) {
+        throw new Error(`Endpoint ${url} returned HTTP ${r.status}`);
+      }
+      return r.json();
+    };
+
     const fetchData = async () => {
       try {
         const [wlRes, regRes] = await Promise.all([
-          fetch('/api/watchlist?symbols=RELIANCE,TCS,HDFCBANK,INFY,ICICIBANK,SBIN,BHARTIARTL').then(r => r.json()),
-          fetch('/api/quant/regime').then(r => r.json()),
+          checkJson('/api/watchlist?symbols=RELIANCE,TCS,HDFCBANK,INFY,ICICIBANK,SBIN,BHARTIARTL'),
+          checkJson('/api/quant/regime'),
         ]);
         setWatchlist(wlRes.stocks || []);
         setRegime(regRes);
       } catch (e) {
         console.error('Failed to fetch home data', e);
+        setErrorMsg(e.toString());
       } finally {
         setLoading(false);
       }
@@ -26,8 +44,22 @@ export default function Home() {
     fetchData();
   }, []);
 
-  const gainers = [...watchlist].filter(s => !s.error).sort((a, b) => (b.changePct || 0) - (a.changePct || 0)).slice(0, 3);
-  const losers = [...watchlist].filter(s => !s.error).sort((a, b) => (a.changePct || 0) - (b.changePct || 0)).slice(0, 3);
+  const gainers = [...watchlist].filter(s => !s.error).sort((a, b) => {
+    if (sortBy === 'volume') return (b.volume || 0) - (a.volume || 0);
+    return (b.changePct || 0) - (a.changePct || 0);
+  }).slice(0, 3);
+  
+  const losers = [...watchlist].filter(s => !s.error).sort((a, b) => {
+    if (sortBy === 'volume') return (a.volume || 0) - (b.volume || 0); // ascending volume doesn't make sense for losers, but lets keep them low volume? Wait, "top volume" is highest volume. Let's make "losers" just the lowest gainers if volume is selected? No, let's just sort losers by highest volume but negative change? 
+    // Actually, if sortBy is volume, gainers and losers both become "Most Active". Let's change the headers based on toggle.
+    if (sortBy === 'volume') return (b.volume || 0) - (a.volume || 0);
+    return (a.changePct || 0) - (b.changePct || 0);
+  }).slice(0, 3);
+
+  // If sorted by volume, top losers doesn't make as much sense, so we slice the NEXT 3 highest volume.
+  const displayLosers = sortBy === 'volume' 
+    ? [...watchlist].filter(s => !s.error).sort((a, b) => (b.volume || 0) - (a.volume || 0)).slice(3, 6)
+    : losers;
 
   const regimeColor = {
     'BULL': 'text-secondary',
@@ -53,6 +85,11 @@ export default function Home() {
 
   return (
     <div className="p-4 md:p-6 bg-surface-dim min-h-full">
+      {errorMsg && (
+        <div className="mb-4 p-4 border border-error bg-error/10 text-error font-mono text-xs">
+          ERROR FETCHING DATA: {errorMsg}
+        </div>
+      )}
       {/* Header */}
       <div className="flex justify-between items-end mb-6">
         <div>
@@ -74,11 +111,19 @@ export default function Home() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {/* Top Gainers — LIVE */}
+        {/* Top Gainers / Active */}
         <div className="border border-outline-variant bg-surface p-4">
-          <div className="flex items-center gap-2 mb-4 border-b border-outline-variant pb-2">
-            <TrendingUp size={16} className="text-secondary" />
-            <h2 className="font-ui text-xs uppercase tracking-widest text-on-surface">Top Gainers</h2>
+          <div className="flex items-center justify-between mb-4 border-b border-outline-variant pb-2">
+            <div className="flex items-center gap-2">
+              {sortBy === 'changePct' ? <TrendingUp size={16} className="text-secondary" /> : <Activity size={16} className="text-primary" />}
+              <h2 className="font-ui text-xs uppercase tracking-widest text-on-surface">
+                {sortBy === 'changePct' ? 'Top Gainers' : 'Most Active'}
+              </h2>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setSortBy('changePct')} className={`font-ui text-[10px] uppercase tracking-wider ${sortBy === 'changePct' ? 'text-secondary' : 'text-outline hover:text-on-surface'}`}>%</button>
+              <button onClick={() => setSortBy('volume')} className={`font-ui text-[10px] uppercase tracking-wider ${sortBy === 'volume' ? 'text-primary' : 'text-outline hover:text-on-surface'}`}>Vol</button>
+            </div>
           </div>
           <div className="flex flex-col gap-1">
             {gainers.map(stock => (
@@ -92,22 +137,32 @@ export default function Home() {
                   <span className="font-ui text-[10px] text-outline ml-2 hidden sm:inline">{stock.name?.split(' ')[0]}</span>
                 </div>
                 <div className="text-right">
-                  <span className="font-mono text-xs text-on-surface-variant mr-3">₹{stock.price?.toLocaleString('en-IN')}</span>
-                  <span className="font-mono text-xs text-secondary">+{stock.changePct}%</span>
+                  <span className="font-mono text-xs text-on-surface-variant mr-3">₹{stock.price?.toLocaleString('en-IN') || '—'}</span>
+                  {sortBy === 'volume' ? (
+                    <span className="font-mono text-xs text-primary">{stock.volumeFormatted}</span>
+                  ) : (
+                    <span className={`font-mono text-xs ${(stock.changePct || 0) >= 0 ? 'text-secondary' : 'text-error'}`}>
+                      {(stock.changePct || 0) >= 0 ? '+' : ''}{stock.changePct || 0}%
+                    </span>
+                  )}
                 </div>
               </button>
             ))}
           </div>
         </div>
 
-        {/* Top Losers — LIVE */}
+        {/* Top Losers / Active Continued */}
         <div className="border border-outline-variant bg-surface p-4">
-          <div className="flex items-center gap-2 mb-4 border-b border-outline-variant pb-2">
-            <TrendingDown size={16} className="text-error" />
-            <h2 className="font-ui text-xs uppercase tracking-widest text-on-surface">Top Losers</h2>
+          <div className="flex items-center justify-between mb-4 border-b border-outline-variant pb-2">
+            <div className="flex items-center gap-2">
+              {sortBy === 'changePct' ? <TrendingDown size={16} className="text-error" /> : <Activity size={16} className="text-primary" />}
+              <h2 className="font-ui text-xs uppercase tracking-widest text-on-surface">
+                {sortBy === 'changePct' ? 'Top Losers' : 'Active (Cont)'}
+              </h2>
+            </div>
           </div>
           <div className="flex flex-col gap-1">
-            {losers.map(stock => (
+            {displayLosers.map(stock => (
               <button 
                 key={stock.symbol}
                 onClick={() => navigate(`/dashboard/${stock.symbol}`)}
@@ -118,8 +173,14 @@ export default function Home() {
                   <span className="font-ui text-[10px] text-outline ml-2 hidden sm:inline">{stock.name?.split(' ')[0]}</span>
                 </div>
                 <div className="text-right">
-                  <span className="font-mono text-xs text-on-surface-variant mr-3">₹{stock.price?.toLocaleString('en-IN')}</span>
-                  <span className="font-mono text-xs text-error">{stock.changePct}%</span>
+                  <span className="font-mono text-xs text-on-surface-variant mr-3">₹{stock.price?.toLocaleString('en-IN') || '—'}</span>
+                  {sortBy === 'volume' ? (
+                    <span className="font-mono text-xs text-primary">{stock.volumeFormatted}</span>
+                  ) : (
+                    <span className={`font-mono text-xs ${(stock.changePct || 0) >= 0 ? 'text-secondary' : 'text-error'}`}>
+                      {(stock.changePct || 0) >= 0 ? '+' : ''}{stock.changePct || 0}%
+                    </span>
+                  )}
                 </div>
               </button>
             ))}
@@ -182,20 +243,25 @@ export default function Home() {
                 <th className="font-ui text-[10px] uppercase p-3 font-normal tracking-wider">Symbol</th>
                 <th className="font-ui text-[10px] uppercase p-3 font-normal tracking-wider text-right">Price</th>
                 <th className="font-ui text-[10px] uppercase p-3 font-normal tracking-wider text-right">Change</th>
+                <th className="font-ui text-[10px] uppercase p-3 font-normal tracking-wider text-right">Volume</th>
                 <th className="font-ui text-[10px] uppercase p-3 font-normal tracking-wider text-right">Mkt Cap</th>
                 <th className="font-ui text-[10px] uppercase p-3 font-normal tracking-wider text-right">P/E</th>
               </tr>
             </thead>
             <tbody>
-              {watchlist.filter(s => !s.error).map((s, i) => (
+              {watchlist.filter(s => !s.error).sort((a,b) => {
+                if (sortBy === 'volume') return (b.volume || 0) - (a.volume || 0);
+                return (b.changePct || 0) - (a.changePct || 0);
+              }).map((s, i) => (
                 <tr key={s.symbol} className={`border-b border-outline-variant/30 hover:bg-surface-container transition-colors cursor-pointer ${i % 2 === 0 ? 'bg-surface' : 'bg-surface-container-lowest'}`}
                     onClick={() => navigate(`/dashboard/${s.symbol}`)}>
                   <td className="p-3 text-on-surface font-bold">{s.symbol}</td>
-                  <td className="p-3 text-right text-on-surface tabular-nums">₹{s.price?.toLocaleString('en-IN')}</td>
-                  <td className={`p-3 text-right tabular-nums ${s.changePct >= 0 ? 'text-secondary' : 'text-error'}`}>
-                    {s.changePct >= 0 ? '+' : ''}{s.changePct}%
+                  <td className="p-3 text-right text-on-surface tabular-nums">₹{s.price?.toLocaleString('en-IN') || '—'}</td>
+                  <td className={`p-3 text-right tabular-nums ${(s.changePct || 0) >= 0 ? 'text-secondary' : 'text-error'}`}>
+                    {(s.changePct || 0) >= 0 ? '+' : ''}{s.changePct || 0}%
                   </td>
-                  <td className="p-3 text-right text-on-surface-variant tabular-nums">{s.marketCap}</td>
+                  <td className="p-3 text-right text-on-surface-variant tabular-nums">{s.volumeFormatted || '—'}</td>
+                  <td className="p-3 text-right text-on-surface-variant tabular-nums">{s.marketCap || '—'}</td>
                   <td className="p-3 text-right text-on-surface tabular-nums">{s.pe ?? '—'}</td>
                 </tr>
               ))}

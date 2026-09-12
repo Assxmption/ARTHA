@@ -37,6 +37,7 @@ from app.factstore.schemas import (
     FundamentalRow,
     NarrativeFact,
     NewsSignal,
+    OptionsSignal,
     QuantSignal,
     ReportCitation,
     RiskFlag,
@@ -50,6 +51,7 @@ T = TypeVar("T", bound=BaseFact)
 _FACT_MODELS: dict[FactType, Type[BaseFact]] = {
     FactType.FUNDAMENTAL: FundamentalRow,
     FactType.QUANT_SIGNAL: QuantSignal,
+    FactType.OPTIONS_SIGNAL: OptionsSignal,
     FactType.RISK_FLAG: RiskFlag,
     FactType.NEWS_SIGNAL: NewsSignal,
     FactType.NARRATIVE: NarrativeFact,

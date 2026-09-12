@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
@@ -95,11 +95,21 @@ if frontend_dir.exists():
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
         """Catch-all for SPA routing."""
+        if full_path.startswith("api/"):
+            logger.warning(f"API request fell through to SPA catch-all! Path: {full_path}")
+            
         index = frontend_dir / "index.html"
         requested = frontend_dir / full_path
         if requested.exists() and requested.is_file():
             return FileResponse(str(requested))
         return FileResponse(str(index))
+
+@app.middleware("http")
+async def add_cache_control_header(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api"):
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 
 # ── Dev Entry Point ────────────────────────────────────────────────────────────

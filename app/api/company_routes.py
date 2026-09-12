@@ -87,15 +87,15 @@ async def get_company_view(symbol: str, days: int = 180):
         prev_close = float(hist['Close'].iloc[-2]) if len(hist) > 1 else current_price
         
         price_data = {
-            "current": round(current_price, 2),
-            "previousClose": round(prev_close, 2),
-            "change": round(current_price - prev_close, 2),
-            "changePct": round((current_price / prev_close - 1) * 100, 2),
-            "dayHigh": round(float(hist['High'].iloc[-1]), 2),
-            "dayLow": round(float(hist['Low'].iloc[-1]), 2),
-            "volume": int(hist['Volume'].iloc[-1]),
-            "fiftyTwoWeekHigh": round(float(hist['High'].max()), 2),
-            "fiftyTwoWeekLow": round(float(hist['Low'].min()), 2),
+            "current": _safe_round(current_price),
+            "previousClose": _safe_round(prev_close),
+            "change": _safe_round(current_price - prev_close),
+            "changePct": _safe_round((current_price / prev_close - 1) * 100) if prev_close else 0,
+            "dayHigh": _safe_round(float(hist['High'].iloc[-1])),
+            "dayLow": _safe_round(float(hist['Low'].iloc[-1])),
+            "volume": int(hist['Volume'].iloc[-1]) if not np.isnan(hist['Volume'].iloc[-1]) else 0,
+            "fiftyTwoWeekHigh": _safe_round(float(hist['High'].max())),
+            "fiftyTwoWeekLow": _safe_round(float(hist['Low'].min())),
         }
         
         # Key fundamentals from yfinance info
@@ -217,9 +217,9 @@ async def get_company_quick(symbol: str):
         return {
             "symbol": symbol,
             "name": info.get("longName", info.get("shortName", symbol)),
-            "price": round(current, 2),
-            "change": round(current - prev, 2),
-            "changePct": round((current / prev - 1) * 100, 2),
+            "price": _safe_round(current),
+            "change": _safe_round(current - prev),
+            "changePct": _safe_round((current / prev - 1) * 100) if prev else 0,
             "marketCap": _format_large_number(info.get("marketCap", 0)),
             "pe": _safe_round(info.get("trailingPE")),
             "volume": int(hist['Volume'].iloc[-1]),
@@ -273,8 +273,97 @@ async def get_news_sentiment_summary(symbol: str):
 
 # ── Multi-company batch endpoint ───────────────────────────────────────────────
 
+@router.get("/api/search")
+async def search_symbols(q: str):
+    """
+    Search for stock symbols using Yahoo Finance search API.
+    Filters for NSE and BSE stocks.
+    """
+    if not q or len(q) < 1:
+        return {"results": []}
+        
+    import httpx
+    
+    url = f"https://query2.finance.yahoo.com/v1/finance/search?q={q}&quotesCount=10&newsCount=0"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            
+            quotes = data.get("quotes", [])
+            # Filter for Indian exchanges (NSI for NSE, BSE for Bombay Stock Exchange)
+            indian_stocks = [
+                {
+                    "symbol": q.get("symbol", "").replace(".NS", "").replace(".BO", ""),
+                    "name": q.get("shortname") or q.get("longname", ""),
+                    "exchange": "NSE" if q.get("exchange") == "NSI" else "BSE",
+                    "type": q.get("quoteType", "EQUITY"),
+                }
+                for q in quotes
+                if q.get("exchange") in ["NSI", "BSE"] and q.get("quoteType") in ["EQUITY", "ETF", "MUTUALFUND"]
+            ]
+            
+            # Deduplicate by symbol (prefer NSE over BSE)
+            seen = set()
+            deduped = []
+            
+            # Local fallback for 1-2 letter searches (Yahoo global search favors US stocks)
+            LOCAL_TOP_STOCKS = [
+                {"symbol": "RELIANCE", "name": "Reliance Industries", "exchange": "NSE", "type": "EQUITY"},
+                {"symbol": "TCS", "name": "Tata Consultancy Services", "exchange": "NSE", "type": "EQUITY"},
+                {"symbol": "HDFCBANK", "name": "HDFC Bank", "exchange": "NSE", "type": "EQUITY"},
+                {"symbol": "INFY", "name": "Infosys", "exchange": "NSE", "type": "EQUITY"},
+                {"symbol": "ICICIBANK", "name": "ICICI Bank", "exchange": "NSE", "type": "EQUITY"},
+                {"symbol": "SBIN", "name": "State Bank of India", "exchange": "NSE", "type": "EQUITY"},
+                {"symbol": "BHARTIARTL", "name": "Bharti Airtel", "exchange": "NSE", "type": "EQUITY"},
+                {"symbol": "ITC", "name": "ITC Limited", "exchange": "NSE", "type": "EQUITY"},
+                {"symbol": "MASTEK", "name": "Mastek Limited", "exchange": "NSE", "type": "EQUITY"},
+                {"symbol": "TATAMOTORS", "name": "Tata Motors", "exchange": "NSE", "type": "EQUITY"}
+            ]
+            
+            q_lower = q.lower()
+            for stock in LOCAL_TOP_STOCKS:
+                if q_lower in stock["symbol"].lower() or q_lower in stock["name"].lower():
+                    seen.add(stock["symbol"])
+                    deduped.append(stock)
+            
+            for stock in indian_stocks:
+                if stock["symbol"] not in seen:
+                    seen.add(stock["symbol"])
+                    deduped.append(stock)
+            
+            # Simple heuristic scoring for better ranking
+            def score_stock(s):
+                sym = s["symbol"].lower()
+                name = s["name"].lower()
+                
+                if sym == q_lower: return 100
+                if sym.startswith(q_lower): return 50
+                if name.startswith(q_lower): return 40
+                
+                # Check if any word in the name starts with the query (e.g., 'm' matches 'Tata Motors')
+                words = name.split()
+                if any(w.startswith(q_lower) for w in words): return 30
+                
+                if q_lower in sym: return 10
+                if q_lower in name: return 5
+                return 0
+                
+            deduped.sort(key=score_stock, reverse=True)
+            
+            return {"results": deduped[:8]}
+    except Exception as e:
+        logger.error("Search failed for %s: %s", q, e)
+        return {"results": []}
+
+
+# ── Multi-company batch endpoint ───────────────────────────────────────────────
+
 @router.get("/api/watchlist")
-async def get_watchlist(
+def get_watchlist(
     symbols: str = "RELIANCE,TCS,HDFCBANK,INFY,ICICIBANK,SBIN,BHARTIARTL",
 ):
     """
@@ -282,35 +371,77 @@ async def get_watchlist(
     Returns lightweight snapshots for a watchlist.
     """
     import yfinance as yf
+    import pandas as pd
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     
     sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()][:15]
     
-    results = []
-    for sym in sym_list:
+    def fetch_symbol(sym):
         try:
             ticker = yf.Ticker(f"{sym}.NS")
-            info = ticker.info or {}
-            hist = ticker.history(period="2d")
+            hist = ticker.history(period="5d").dropna(subset=["Close"])
             
-            if hist.empty:
-                continue
-            
-            current = float(hist['Close'].iloc[-1])
-            prev = float(hist['Close'].iloc[-2]) if len(hist) > 1 else current
-            
-            results.append({
+            if len(hist) >= 2:
+                c1, c2 = hist["Close"].iloc[-1], hist["Close"].iloc[-2]
+                if pd.isna(c1) or pd.isna(c2):
+                    price = change = change_pct = None
+                else:
+                    price = round(float(c1), 2)
+                    prev = round(float(c2), 2)
+                    change = round(price - prev, 2)
+                    change_pct = round((change / prev) * 100, 2) if prev != 0 else 0.0
+            elif len(hist) == 1:
+                c1 = hist["Close"].iloc[0]
+                if pd.isna(c1):
+                    price = change = change_pct = None
+                else:
+                    price = round(float(c1), 2)
+                    change = 0.0
+                    change_pct = 0.0
+            else:
+                price = change = change_pct = None
+
+            try:
+                info = ticker.info
+            except Exception:
+                info = {}
+
+            volume = None
+            if len(hist) > 0 and "Volume" in hist.columns:
+                try:
+                    volume_val = hist["Volume"].iloc[-1]
+                    if pd.notna(volume_val):
+                        volume = int(volume_val)
+                except Exception:
+                    pass
+
+            return {
                 "symbol": sym,
-                "name": info.get("longName", info.get("shortName", sym)),
-                "price": round(current, 2),
-                "change": round(current - prev, 2),
-                "changePct": round((current / prev - 1) * 100, 2),
-                "marketCap": _format_large_number(info.get("marketCap", 0)),
-                "pe": _safe_round(info.get("trailingPE")),
-                "sector": info.get("sector", "N/A"),
-            })
+                "name": info.get("longName") or info.get("shortName") or sym,
+                "price": price,
+                "change": change,
+                "changePct": change_pct,
+                "volume": volume,
+                "volumeFormatted": _format_large_number(volume, prefix="") if volume else "—",
+                "marketCap": _format_large_number(info.get("marketCap")),
+                "pe": round(info.get("trailingPE"), 2) if info.get("trailingPE") else None,
+                "sector": info.get("sector") or "Unknown"
+            }
         except Exception as e:
             logger.warning("Watchlist fetch failed for %s: %s", sym, e)
-            results.append({"symbol": sym, "error": str(e)})
+            return {"symbol": sym, "error": str(e)}
+
+    results = []
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_sym = {executor.submit(fetch_symbol, sym): sym for sym in sym_list}
+        # Keep original order
+        res_map = {}
+        for future in as_completed(future_to_sym):
+            sym = future_to_sym[future]
+            res_map[sym] = future.result()
+            
+        for sym in sym_list:
+            results.append(res_map[sym])
     
     return {"stocks": results, "total": len(results)}
 
@@ -327,8 +458,8 @@ def _safe_round(val, digits: int = 2):
         return None
 
 
-def _format_large_number(val) -> str:
-    """Format large numbers as ₹X.XX Cr or ₹X.XX L."""
+def _format_large_number(val, prefix="₹") -> str:
+    """Format large numbers as prefix + X.XX Cr or L."""
     if val is None:
         return "N/A"
     try:
@@ -337,15 +468,15 @@ def _format_large_number(val) -> str:
         return "N/A"
     
     if val >= 1e12:
-        return f"₹{val / 1e12:.2f}T"
+        return f"{prefix}{val / 1e12:.2f}T"
     elif val >= 1e7:
-        return f"₹{val / 1e7:.2f} Cr"
+        return f"{prefix}{val / 1e7:.2f} Cr"
     elif val >= 1e5:
-        return f"₹{val / 1e5:.2f} L"
+        return f"{prefix}{val / 1e5:.2f} L"
     elif val >= 1000:
-        return f"₹{val / 1000:.1f}K"
+        return f"{prefix}{val / 1000:.1f}K"
     else:
-        return f"₹{val:.0f}"
+        return f"{prefix}{val:.0f}"
 
 
 def _compute_rsi(prices, period: int = 14):

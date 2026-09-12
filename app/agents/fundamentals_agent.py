@@ -189,3 +189,335 @@ def format_facts_for_narration(facts: list[FundamentalRow]) -> str:
         "any numbers not present in this table."
     )
     return "\n".join(lines)
+
+
+# ── Metric Categories ───────────────────────────────────────────────────────────
+
+# Grouping metrics by category for structured narration.
+# The LLM receives facts organized by these categories, which produces
+# a more coherent narrative than a flat alphabetical list.
+_METRIC_CATEGORIES: dict[str, list[str]] = {
+    "Profitability": [
+        "revenue", "gross_profit", "operating_income", "net_income",
+        "ebitda", "operating_margin", "net_margin", "gross_margin",
+    ],
+    "Returns": [
+        "roe", "roce", "roa", "roic",
+    ],
+    "Leverage & Liquidity": [
+        "total_debt", "net_debt", "debt_to_equity", "current_ratio",
+        "cash", "interest_coverage", "total_equity",
+    ],
+    "Valuation & Per-Share": [
+        "eps", "eps_diluted", "book_value_per_share", "pe_ratio",
+        "market_cap",
+    ],
+    "Growth & Cash Flow": [
+        "revenue_growth_yoy", "net_income_growth_yoy",
+        "operating_cash_flow", "free_cash_flow", "capex",
+    ],
+    "Market Data": [
+        "annual_return", "annual_volatility", "avg_daily_volume",
+        "close_price_latest", "52w_high", "52w_low",
+    ],
+}
+
+
+def _categorize_facts(facts: list[FundamentalRow]) -> dict[str, list[FundamentalRow]]:
+    """
+    Group FundamentalRow facts by metric category.
+
+    Facts whose metric doesn't match any category go into "Other".
+    """
+    # Build a lookup: metric_name → category_name
+    metric_to_cat: dict[str, str] = {}
+    for cat, metrics in _METRIC_CATEGORIES.items():
+        for m in metrics:
+            metric_to_cat[m] = cat
+
+    categorized: dict[str, list[FundamentalRow]] = {}
+    for f in facts:
+        cat = metric_to_cat.get(f.metric, "Other")
+        categorized.setdefault(cat, []).append(f)
+
+    return categorized
+
+
+def _format_categorized_facts(
+    categorized: dict[str, list[FundamentalRow]],
+) -> str:
+    """
+    Format categorized facts into a structured prompt section.
+
+    This produces a more organized input for the LLM than a flat table,
+    leading to better-structured narratives.
+    """
+    sections = []
+
+    for cat_name in list(_METRIC_CATEGORIES.keys()) + ["Other"]:
+        facts = categorized.get(cat_name, [])
+        if not facts:
+            continue
+
+        lines = [f"\n### {cat_name}\n"]
+        lines.append("| Fact ID | FY | Metric | Value | Unit |")
+        lines.append("|---------|-----|--------|-------|------|")
+
+        for f in sorted(facts, key=lambda x: (x.fiscal_year, x.metric)):
+            val_str = f"{f.value:.2f}" if f.value is not None else "N/A"
+            lines.append(
+                f"| {f.fact_id[:8]}… | {f.fiscal_year} "
+                f"| {f.metric} | {val_str} | {f.unit or '—'} |"
+            )
+
+        sections.append("\n".join(lines))
+
+    return "\n".join(sections)
+
+
+def _extract_fact_ids(text: str) -> list[str]:
+    """
+    Extract fact_id references from a narrative.
+
+    Fact IDs appear as 8-character hex prefixes followed by "…" in
+    the narrative (matching the format we give the LLM). We also
+    accept the full 32-char hex ID if the LLM copies the whole thing.
+
+    Returns a list of fact_id prefixes found in the text.
+    """
+    import re
+    # Match 8-hex-char followed by optional "…" or "..."
+    pattern = r'\b([0-9a-f]{8})(?:…|\.\.\.)'
+    prefixes = re.findall(pattern, text, re.IGNORECASE)
+
+    # Also match full 32-char hex IDs
+    full_pattern = r'\b([0-9a-f]{32})\b'
+    full_ids = re.findall(full_pattern, text, re.IGNORECASE)
+
+    return prefixes + full_ids
+
+
+def _validate_citations(
+    narrative: str,
+    known_facts: list[FundamentalRow],
+    job_id: str,
+    store: FactStore,
+) -> tuple[list[str], list[str]]:
+    """
+    Validate that all fact_id citations in a narrative resolve to
+    actual facts in the Fact Store with non-empty source fields.
+
+    Returns
+    -------
+    (valid_ids, invalid_ids) : tuple[list[str], list[str]]
+        valid_ids: fact_ids that were found and have source
+        invalid_ids: fact_ids that were cited but not found
+    """
+    cited_prefixes = _extract_fact_ids(narrative)
+    if not cited_prefixes:
+        return [], []
+
+    # Build a lookup from fact_id prefix → full fact_id
+    prefix_to_id: dict[str, str] = {}
+    for f in known_facts:
+        prefix_to_id[f.fact_id[:8]] = f.fact_id
+        prefix_to_id[f.fact_id] = f.fact_id  # Full ID too
+
+    valid_ids: list[str] = []
+    invalid_ids: list[str] = []
+
+    for prefix in cited_prefixes:
+        full_id = prefix_to_id.get(prefix.lower())
+        if full_id is None:
+            # Try the store directly
+            fact = store.get_fact(prefix)
+            if fact is not None and fact.source:
+                valid_ids.append(prefix)
+            else:
+                invalid_ids.append(prefix)
+        else:
+            valid_ids.append(full_id)
+
+    return list(set(valid_ids)), list(set(invalid_ids))
+
+
+# ── Narration ───────────────────────────────────────────────────────────────────
+
+# The narration prompt template. This is carefully structured to:
+# 1. Forbid number invention (AGENTS.md rule 1)
+# 2. Require fact_id citations (AGENTS.md rule 10)
+# 3. Guide Harvey-style synthesis (trends, not just display)
+_NARRATION_PROMPT = """You are a senior equity research analyst specializing in Indian markets (NSE).
+
+Given the structured fundamental data below for {symbol}, write a concise narrative analysis.
+
+ABSOLUTE RULES:
+1. NEVER invent, estimate, or compute any number. Only narrate values present in the data below.
+2. Every numeric value you mention MUST cite its Fact ID in brackets, e.g. [abc12345…].
+3. If a metric is missing, say "not available" — do not guess.
+4. Focus on TRENDS: year-over-year changes, inflection points, and what the numbers mean.
+5. Keep the narrative to 3-5 paragraphs maximum.
+
+STRUCTURE your analysis as:
+- **Financial Health**: Profitability trends, margin trajectory, earnings quality
+- **Balance Sheet**: Leverage trends, liquidity position, capital efficiency
+- **Growth & Cash Flow**: Revenue/earnings growth rates, cash generation ability
+- **Key Risks**: Any deteriorating metrics, overleveraging, margin compression
+
+{facts_section}
+
+Write your analysis now. Remember: cite fact_ids for every number."""
+
+
+def narrate_fundamentals(
+    symbol: str,
+    job_id: str,
+    store: FactStore,
+    facts: Optional[list[FundamentalRow]] = None,
+) -> Optional[NarrativeFact]:
+    """
+    Produce a Harvey-style narrative for a symbol's fundamentals.
+
+    This is the narration step that was previously unwired. It:
+      1. Retrieves FundamentalRow facts from the Fact Store by job_id + symbol.
+      2. Groups facts by metric category (profitability, leverage, etc.).
+      3. Makes 1 cheap LLM call to narrate trends with fact_id citations.
+      4. Validates all cited fact_ids exist in the store.
+      5. Writes a NarrativeFact to the store with referenced_fact_ids.
+      6. If any citation is invalid, writes a RiskFlag with severity=WARNING.
+
+    Constraints enforced:
+      - 1 cheap LLM call per symbol (AGENTS.md rule 3)
+      - Zero new external API calls
+      - All claims traced to fact_ids (AGENTS.md rule 10)
+      - No number computed by the LLM (AGENTS.md rule 1)
+
+    Parameters
+    ----------
+    symbol : str
+        NSE symbol.
+    job_id : str
+        Current analysis job ID.
+    store : FactStore
+        Fact Store instance.
+    facts : list[FundamentalRow], optional
+        Pre-loaded facts. If None, retrieved from the store.
+
+    Returns
+    -------
+    NarrativeFact or None
+        The narrative fact, or None if no facts are available.
+    """
+    from app.factstore.schemas import RiskFlag, Severity
+
+    # Step 1: Retrieve facts if not provided
+    if facts is None:
+        all_facts = store.get_facts_for_symbol(job_id, symbol)
+        facts = [
+            f for f in all_facts
+            if isinstance(f, FundamentalRow)
+        ]
+
+    if not facts:
+        logger.warning(
+            "No FundamentalRow facts found for %s in job %s. "
+            "Cannot narrate without data.",
+            symbol, job_id,
+        )
+        return None
+
+    logger.info(
+        "Narrating %d fundamental facts for %s",
+        len(facts), symbol,
+    )
+
+    # Step 2: Categorize and format
+    categorized = _categorize_facts(facts)
+    facts_section = _format_categorized_facts(categorized)
+
+    # Step 3: Build prompt and call cheap LLM (1 call per symbol)
+    prompt = _NARRATION_PROMPT.format(
+        symbol=symbol,
+        facts_section=facts_section,
+    )
+
+    try:
+        llm = get_cheap_llm()
+        # Direct LLM invocation — not through CrewAI Agent overhead.
+        # We only need a single structured narration, not a multi-step
+        # agent loop. This keeps it at exactly 1 cheap LLM call.
+        response = llm.call(messages=[{"role": "user", "content": prompt}])
+
+        if hasattr(response, "content"):
+            narrative_text = response.content
+        elif hasattr(response, "text"):
+            narrative_text = response.text
+        elif isinstance(response, str):
+            narrative_text = response
+        else:
+            narrative_text = str(response)
+
+    except Exception as e:
+        logger.error(
+            "LLM narration failed for %s: %s. "
+            "Falling back to structured summary.",
+            symbol, e,
+        )
+        # Fallback: use the formatted facts directly (no LLM call)
+        narrative_text = (
+            f"## {symbol} — Fundamental Summary\n\n"
+            f"Data available for {len(facts)} metrics across "
+            f"FY{min(f.fiscal_year for f in facts)}-"
+            f"FY{max(f.fiscal_year for f in facts)}.\n\n"
+            + format_facts_for_narration(facts)
+        )
+
+    # Step 4: Validate citations
+    valid_ids, invalid_ids = _validate_citations(
+        narrative_text, facts, job_id, store,
+    )
+
+    if invalid_ids:
+        logger.warning(
+            "Narrative for %s contains %d invalid fact_id citations: %s",
+            symbol, len(invalid_ids), invalid_ids[:5],
+        )
+        # Write a RiskFlag for invalid citations (AGENTS.md rule 10)
+        risk_flag = RiskFlag(
+            job_id=job_id,
+            source=f"fundamentals_agent_narration_{symbol}",
+            symbol_or_pair=symbol,
+            flag_type="uncitable_narrative_claim",
+            detail=(
+                f"Narrative for {symbol} contains {len(invalid_ids)} "
+                f"fact_id references that could not be resolved to "
+                f"actual Fact Store entries: {invalid_ids[:5]}. "
+                f"These claims may be fabricated."
+            ),
+            severity=Severity.WARNING,
+        )
+        store.put_fact(risk_flag)
+
+    logger.info(
+        "Narrative for %s: %d valid citations, %d invalid",
+        symbol, len(valid_ids), len(invalid_ids),
+    )
+
+    # Step 5: Write NarrativeFact
+    narrative_fact = NarrativeFact(
+        job_id=job_id,
+        source=f"fundamentals_agent_narration_{symbol}",
+        agent_name="fundamentals_agent",
+        section="fundamentals_analysis",
+        content=narrative_text,
+        referenced_fact_ids=valid_ids,
+    )
+
+    store.put_fact(narrative_fact)
+    logger.info(
+        "Wrote NarrativeFact for %s (fact_id=%s, %d citations)",
+        symbol, narrative_fact.fact_id[:8], len(valid_ids),
+    )
+
+    return narrative_fact
+

@@ -1,60 +1,61 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { createChart } from 'lightweight-charts';
-import { Filter, SlidersHorizontal, MousePointer2, Activity, BarChart2 } from 'lucide-react';
+import { Activity, BarChart2, TrendingUp } from 'lucide-react';
+
+// Helper to calculate Simple Moving Average
+function calculateSMA(data, count) {
+  const result = [];
+  let sum = 0;
+  for (let i = 0; i < data.length; i++) {
+    sum += data[i].close;
+    if (i >= count) {
+      sum -= data[i - count].close;
+      result.push({ time: data[i].time, value: sum / count });
+    } else if (i === count - 1) {
+      result.push({ time: data[i].time, value: sum / count });
+    }
+  }
+  return result;
+}
 
 export default function CandlestickChart({ symbol }) {
   const chartContainerRef = useRef();
   const chartRef = useRef(null);
-  const seriesRef = useRef(null);
   
   const [activeInterval, setActiveInterval] = useState('1d');
-  const [chartType, setChartType] = useState('candle'); // 'candle' or 'line'
+  const [chartType, setChartType] = useState('candle');
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Fetch data when symbol or interval changes
+  // Indicators State
+  const [showSMA, setShowSMA] = useState(false);
+  const [showVolume, setShowVolume] = useState(true);
+
   useEffect(() => {
     if (!symbol) return;
     
     setLoading(true);
     setError(null);
     
-    // Map our UI intervals to yfinance intervals
-    // UI: '5m', '15m', '1h', '1d', '1mo', '1y'
     let fetchInterval = activeInterval;
     let daysToFetch = 180;
     
-    if (activeInterval === '5m') {
-      daysToFetch = 7; // yfinance limit is 60, but 7 is fast and good for 5m
-    } else if (activeInterval === '15m') {
-      daysToFetch = 14;
-    } else if (activeInterval === '1h') {
-      fetchInterval = '60m';
-      daysToFetch = 60;
-    } else if (activeInterval === '1y') {
-      fetchInterval = '1d';
-      daysToFetch = 365;
-    } else if (activeInterval === '1mo') {
-      fetchInterval = '1d';
-      daysToFetch = 30;
-    } else if (activeInterval === 'ytd') {
-      fetchInterval = '1d';
-      daysToFetch = 365; // approximation, handled via setVisibleRange later
-    }
+    if (activeInterval === '5m') daysToFetch = 7;
+    else if (activeInterval === '15m') daysToFetch = 14;
+    else if (activeInterval === '1h') { fetchInterval = '60m'; daysToFetch = 60; }
+    else if (activeInterval === '1y') { fetchInterval = '1d'; daysToFetch = 365; }
+    else if (activeInterval === '1mo') { fetchInterval = '1d'; daysToFetch = 30; }
+    else if (activeInterval === 'ytd') { fetchInterval = '1d'; daysToFetch = 365; }
 
-    // Default to '1d' if not one of the intraday ones
     const isIntraday = ['5m', '15m', '60m'].includes(fetchInterval);
     const actualInterval = isIntraday ? fetchInterval : '1d';
 
     fetch(`/api/quant/ohlcv/${symbol}?days=${daysToFetch}&interval=${actualInterval}`)
       .then(r => r.json())
       .then(res => {
-        if (res.data) {
-          setData(res.data);
-        } else {
-          setError("No data returned");
-        }
+        if (res.data) setData(res.data);
+        else setError("No data returned");
       })
       .catch(e => {
         console.error(e);
@@ -63,11 +64,9 @@ export default function CandlestickChart({ symbol }) {
       .finally(() => setLoading(false));
   }, [symbol, activeInterval]);
 
-  // Render chart when data or chartType changes
   useEffect(() => {
     if (!chartContainerRef.current || data.length === 0) return;
 
-    // Destroy existing chart if it exists to cleanly swap types
     if (chartRef.current) {
       chartRef.current.remove();
       chartRef.current = null;
@@ -76,32 +75,35 @@ export default function CandlestickChart({ symbol }) {
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: 'solid', color: 'transparent' },
-        textColor: 'var(--outline)',
+        textColor: '#e6e1e5',
       },
       grid: {
-        vertLines: { color: 'var(--outline-variant)' },
-        horzLines: { color: 'var(--outline-variant)' },
+        vertLines: { color: '#494640' },
+        horzLines: { color: '#494640' },
       },
       timeScale: {
-        borderColor: 'var(--outline-variant)',
-        timeVisible: true, // Show time for intraday
-        secondsVisible: false,
+        borderColor: '#494640',
+        timeVisible: true,
       },
       rightPriceScale: {
-        borderColor: 'var(--outline-variant)',
+        borderColor: '#494640',
+        scaleMargins: {
+          top: 0.1,
+          bottom: showVolume ? 0.3 : 0.1, // Leave space for volume at bottom
+        },
       },
       crosshair: {
-        mode: 1, // Normal mode
-        vertLine: { color: 'var(--primary)', labelBackgroundColor: 'var(--primary)' },
-        horzLine: { color: 'var(--primary)', labelBackgroundColor: 'var(--primary)' }
+        mode: 1,
+        vertLine: { color: '#e8c086', labelBackgroundColor: '#e8c086' },
+        horzLine: { color: '#e8c086', labelBackgroundColor: '#e8c086' }
       }
     });
     
     chartRef.current = chart;
-    let series;
 
+    let mainSeries;
     if (chartType === 'candle') {
-      series = chart.addCandlestickSeries({
+      mainSeries = chart.addCandlestickSeries({
         upColor: '#a2d0c0',
         downColor: '#ffb4ab',
         borderVisible: false,
@@ -109,68 +111,71 @@ export default function CandlestickChart({ symbol }) {
         wickDownColor: '#ffb4ab'
       });
     } else {
-      series = chart.addLineSeries({
+      mainSeries = chart.addLineSeries({
         color: '#a2d0c0',
         lineWidth: 2,
       });
     }
-    
-    seriesRef.current = series;
 
-    // Format data and extract signals
     const formattedData = [];
+    const volumeData = [];
     const markers = [];
 
     data.forEach((d) => {
-      // Deduplicate timestamps (lightweight-charts requires strictly ascending time)
       const time = d.time; 
-      
-      if (formattedData.length > 0 && formattedData[formattedData.length - 1].time >= time) {
-        return; // Skip duplicate or out-of-order
-      }
+      if (formattedData.length > 0 && formattedData[formattedData.length - 1].time >= time) return;
 
       if (chartType === 'candle') {
-        formattedData.push({
-          time: time,
-          open: d.open,
-          high: d.high,
-          low: d.low,
-          close: d.close,
-        });
+        formattedData.push({ time, open: d.open, high: d.high, low: d.low, close: d.close });
       } else {
-        formattedData.push({
-          time: time,
-          value: d.close,
+        formattedData.push({ time, value: d.close });
+      }
+
+      if (showVolume && d.volume) {
+        const isUp = d.close >= d.open;
+        volumeData.push({
+          time,
+          value: d.volume,
+          color: isUp ? 'rgba(162, 208, 192, 0.4)' : 'rgba(255, 180, 171, 0.4)'
         });
       }
 
-      // Add markers if signal exists
       if (d.signal === 1) {
-        markers.push({
-          time: time,
-          position: 'belowBar',
-          color: '#a2d0c0',
-          shape: 'arrowUp',
-          text: 'BUY',
-        });
+        markers.push({ time, position: 'belowBar', color: '#a2d0c0', shape: 'arrowUp', text: 'BUY' });
       } else if (d.signal === -1) {
-        markers.push({
-          time: time,
-          position: 'aboveBar',
-          color: '#ffb4ab',
-          shape: 'arrowDown',
-          text: 'SELL',
-        });
+        markers.push({ time, position: 'aboveBar', color: '#ffb4ab', shape: 'arrowDown', text: 'SELL' });
       }
     });
 
     try {
-      series.setData(formattedData);
-      if (markers.length > 0 && typeof series.setMarkers === 'function') {
-        series.setMarkers(markers);
+      mainSeries.setData(formattedData);
+      if (markers.length > 0 && typeof mainSeries.setMarkers === 'function') {
+        mainSeries.setMarkers(markers);
       }
-      
-      // Auto scale
+
+      if (showVolume) {
+        const volumeSeries = chart.addHistogramSeries({
+          color: '#26a69a',
+          priceFormat: { type: 'volume' },
+          priceScaleId: '', // set as an overlay
+          scaleMargins: {
+            top: 0.8, // 20% height from bottom
+            bottom: 0,
+          },
+        });
+        volumeSeries.setData(volumeData);
+      }
+
+      if (showSMA) {
+        const smaData = calculateSMA(data, 20); // 20-period SMA
+        const smaSeries = chart.addLineSeries({
+          color: '#2962FF',
+          lineWidth: 2,
+          crosshairMarkerVisible: false,
+        });
+        smaSeries.setData(smaData);
+      }
+
       chart.timeScale().fitContent();
     } catch (e) {
       console.error("Error setting chart data", e);
@@ -181,7 +186,6 @@ export default function CandlestickChart({ symbol }) {
         chart.applyOptions({ width: chartContainerRef.current.clientWidth });
       }
     };
-
     window.addEventListener('resize', handleResize);
 
     return () => {
@@ -191,7 +195,7 @@ export default function CandlestickChart({ symbol }) {
         chartRef.current = null;
       }
     };
-  }, [data, chartType]);
+  }, [data, chartType, showSMA, showVolume]);
 
   return (
     <div className="relative border border-outline-variant bg-surface-dim overflow-hidden flex flex-col h-[500px]">
@@ -205,8 +209,6 @@ export default function CandlestickChart({ symbol }) {
         </div>
         
         <div className="flex flex-wrap gap-4 items-center">
-          
-          {/* Chart Type Toggle */}
           <div className="flex bg-surface-container rounded-sm p-0.5 border border-outline-variant">
             <button 
               onClick={() => setChartType('line')}
@@ -224,7 +226,6 @@ export default function CandlestickChart({ symbol }) {
             </button>
           </div>
 
-          {/* Timeframe/Interval Toggle */}
           <div className="flex flex-wrap gap-1">
             {['5m', '15m', '1h', '1d', '1mo', '1y', 'ytd'].map(tf => (
               <button 
@@ -241,10 +242,22 @@ export default function CandlestickChart({ symbol }) {
             ))}
           </div>
 
-          <div className="flex gap-2 border-l border-outline-variant pl-4 hidden sm:flex">
-            <button className="text-outline hover:text-primary"><Filter size={14}/></button>
-            <button className="text-outline hover:text-primary"><SlidersHorizontal size={14}/></button>
-            <button className="text-outline hover:text-primary"><MousePointer2 size={14}/></button>
+          {/* Indicators Toggles */}
+          <div className="flex gap-2 border-l border-outline-variant pl-4">
+            <button 
+              onClick={() => setShowVolume(!showVolume)}
+              className={`font-ui text-[10px] px-2 py-1 border transition-colors ${showVolume ? 'text-primary border-primary bg-primary/5' : 'text-outline border-transparent hover:text-on-surface'}`}
+              title="Toggle Volume"
+            >
+              VOL
+            </button>
+            <button 
+              onClick={() => setShowSMA(!showSMA)}
+              className={`font-ui text-[10px] px-2 py-1 border transition-colors flex items-center gap-1 ${showSMA ? 'text-blue-500 border-blue-500 bg-blue-500/10' : 'text-outline border-transparent hover:text-on-surface'}`}
+              title="Toggle Moving Average"
+            >
+              <TrendingUp size={10} /> SMA 20
+            </button>
           </div>
         </div>
       </div>

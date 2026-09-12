@@ -42,6 +42,12 @@ from app.quant.regime import detect_regime
 
 from app.quant.factor_backtest import backtest_factor_model
 from app.quant.multi_strategy import combine_strategies as combine_strategy_returns
+from app.quant.options_backtest import (
+    OptionsBacktester, precompute_signals as precompute_options_signals,
+)
+from app.quant.options_strategies import StrategyType
+from app.quant.pca_statarb import backtest_pca_statarb
+from app.data.vix import get_vix_close
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -745,6 +751,222 @@ def run_ml_alpha_strategy(
     return portfolio_returns
 
 
+# ── PCA Statistical Arbitrage Strategy ──────────────────────────────────────────
+
+def run_pca_statarb_strategy(
+    stocks: dict[str, pd.DataFrame],
+    n_components: int = 5,
+    entry_z: float = 1.5,
+    exit_z: float = 0.3,
+) -> pd.Series:
+    """
+    PCA-based cross-sectional stat-arb on the stock universe.
+
+    Extracts systematic risk factors via rolling PCA, then trades
+    mean reversion in the idiosyncratic residuals.  Complements
+    the Kalman-filter pair-wise stat-arb (which is currently DISABLED
+    on Indian equities due to structural breaks).
+
+    Zero LLM calls — entirely deterministic (AGENTS.md rule 1).
+    """
+    logger.info("═══ Strategy I: PCA Statistical Arbitrage ═══")
+
+    # Build close-price panel
+    close_prices = {}
+    for sym, df in stocks.items():
+        if 'Close' in df.columns:
+            s = df['Close'].squeeze()
+            if isinstance(s, pd.DataFrame):
+                s = s.iloc[:, 0]
+            close_prices[sym] = s
+
+    panel = pd.DataFrame(close_prices).dropna(how='all')
+
+    # Need sufficient breadth for cross-sectional PCA
+    if panel.shape[1] < 10:
+        logger.warning(
+            "  PCA stat-arb needs ≥10 stocks; got %d. Skipping.",
+            panel.shape[1],
+        )
+        return pd.Series(0.0, index=panel.index, name="pca_statarb")
+
+    if panel.shape[0] < 400:
+        logger.warning(
+            "  Insufficient history for PCA stat-arb: %d days. Skipping.",
+            panel.shape[0],
+        )
+        return pd.Series(0.0, index=panel.index, name="pca_statarb")
+
+    # Forward-fill gaps (holidays, suspensions), then drop remaining NaN columns
+    panel = panel.ffill().dropna(axis=1, how='any')
+    logger.info("  Universe: %d stocks × %d days", panel.shape[1], panel.shape[0])
+
+    # Run the backtest
+    try:
+        returns = backtest_pca_statarb(
+            prices=panel,
+            n_components=n_components,
+            entry_z=entry_z,
+            exit_z=exit_z,
+            tc_bps=15.0,  # Same as statarb.py convention
+            window=252,
+            lookback_z=20,
+        )
+        returns.name = "pca_statarb"
+        return returns
+    except Exception as e:
+        logger.error("  PCA stat-arb backtest failed: %s", e, exc_info=True)
+        return pd.Series(0.0, index=panel.index, name="pca_statarb")
+
+
+# ── Options Vol-Carry Strategy ──────────────────────────────────────────────────
+
+def run_options_vol_carry_strategy(
+    nifty: pd.DataFrame,
+    capital: float = 5_00_00_000.0,
+) -> pd.Series:
+    """
+    Options volatility-carry strategy — IRON_CONDOR on NIFTY.
+
+    Harvests the Volatility Risk Premium (VRP) by selling iron condors
+    on NIFTY when regime and VRP conditions are favorable.  Uses
+    defined-risk IRON_CONDOR (not SHORT_STRANGLE) per design decision:
+    bounded max loss, clear margin requirement, no undefined tail risk.
+
+    The daily P&L from OptionsBacktester is normalized to returns using
+    peak margin as the denominator (conservative, matches _compute_metrics
+    convention).  This allows the tangency allocator to compare the
+    options sleeve on equal footing with equity strategy return streams.
+
+    Zero LLM calls — entirely deterministic (AGENTS.md rule 1).
+
+    Trade-off: IRON_CONDOR collects less premium than SHORT_STRANGLE
+    (the wings cost ~15-25% of gross credit), but the defined risk
+    makes position sizing deterministic and margin requirements
+    predictable.  The SHORT_STRANGLE's stop_loss_pct is a soft bound;
+    gaps through it are real in Indian markets (circuit-limit opens).
+    """
+    logger.info("═══ Strategy H: Options Vol-Carry (IRON_CONDOR on NIFTY) ═══")
+
+    # Extract NIFTY close prices
+    if "Close" not in nifty.columns:
+        logger.error("  NIFTY data missing 'Close' column")
+        return pd.Series(0.0, index=nifty.index, name="options_vol_carry")
+
+    nifty_close = nifty["Close"].squeeze()
+    if isinstance(nifty_close, pd.DataFrame):
+        nifty_close = nifty_close.iloc[:, 0]
+    nifty_close = nifty_close.dropna()
+
+    if len(nifty_close) < 400:
+        logger.warning("  Insufficient NIFTY data (%d days) for options backtest", len(nifty_close))
+        return pd.Series(0.0, index=nifty_close.index, name="options_vol_carry")
+
+    # Load India VIX for IV reconstruction
+    try:
+        vix_series = get_vix_close()
+        if len(vix_series) > 0:
+            logger.info("  Loaded India VIX: %d data points", len(vix_series))
+        else:
+            vix_series = None
+            logger.info("  No VIX data available; using RV×1.2 proxy")
+    except Exception as e:
+        logger.warning("  VIX fetch failed (%s); using RV×1.2 proxy", e)
+        vix_series = None
+
+    # Detect market regimes on NIFTY (for signal filtering)
+    try:
+        regime_series = detect_regime(nifty_close)
+        logger.info("  Regimes detected: %d data points", len(regime_series))
+    except Exception as e:
+        logger.warning("  Regime detection failed (%s); proceeding without", e)
+        regime_series = None
+
+    # Pre-compute all signals on the FULL series once (critical v2 fix)
+    all_signals = precompute_options_signals(
+        nifty_close,
+        vix_series=vix_series,
+        regime_series=regime_series,
+    )
+    logger.info("  Pre-computed options signals for %d dates", len(all_signals))
+
+    # Run the backtest with IRON_CONDOR (defined risk)
+    backtester = OptionsBacktester(
+        capital=capital,
+        options_pct=0.30,     # 30% of total capital for options
+        max_concurrent=5,
+    )
+
+    result = backtester.backtest_strategy(
+        close_prices=nifty_close,
+        regime_series=regime_series,
+        vix_series=vix_series,
+        strategy_type=StrategyType.IRON_CONDOR,
+        symbol="NIFTY",
+        entry_interval=7,       # New trade every 7 trading days
+        dte_at_entry=30,        # 30-day options
+        early_exit_pct=0.50,    # Take profit at 50% of max profit
+        stop_loss_pct=1.0,      # Close at 100% of max loss
+        precomputed_signals=all_signals,
+    )
+
+    # Log backtest results
+    logger.info(
+        "  IRON_CONDOR backtest: %d trades, Win=%.1f%%, P&L=₹%.0f, "
+        "Sharpe=%.3f, Sortino=%.3f, MaxDD=%.2f%%",
+        result.n_trades,
+        result.win_rate * 100,
+        result.total_pnl,
+        result.sharpe_ratio,
+        result.sortino_ratio,
+        result.max_drawdown_pct,
+    )
+
+    if result.n_trades == 0:
+        logger.warning("  No trades generated — check regime/VRP filters")
+        return pd.Series(0.0, index=nifty_close.index, name="options_vol_carry")
+
+    # Convert daily P&L to daily returns using peak margin as denominator.
+    # This is conservative and matches _compute_metrics' convention.
+    # Trade-off: using avg_margin would inflate returns on sparse windows
+    # where margin is near zero most days; peak_margin is the actual
+    # capital at risk and produces honest risk-adjusted metrics.
+    daily_pnl = result.daily_pnl
+    peak_margin = max(result.avg_margin_used, 1.0)
+
+    # Align daily P&L to the NIFTY index dates
+    # The backtester returns daily_pnl as a list aligned to the dates
+    # it iterated over — which is the sorted nifty_close.index
+    dates = nifty_close.index.sort_values()
+    if len(daily_pnl) <= len(dates):
+        # Pad or align
+        pnl_series = pd.Series(0.0, index=dates, name="options_vol_carry")
+        pnl_series.iloc[:len(daily_pnl)] = daily_pnl
+    else:
+        pnl_series = pd.Series(
+            daily_pnl[:len(dates)], index=dates, name="options_vol_carry",
+        )
+
+    # Normalize P&L to returns
+    returns = pnl_series / peak_margin
+    returns.name = "options_vol_carry"
+
+    # Report performance on the return series
+    arr = returns.values
+    non_zero = arr[arr != 0]
+    if len(non_zero) > 20:
+        ret_sharpe = (np.mean(arr) / max(np.std(arr), 1e-8)) * np.sqrt(252)
+        ann_ret = np.mean(arr) * 252
+        logger.info(
+            "  Options return stream: Sharpe=%.3f, Ann.Return=%.2f%%",
+            ret_sharpe, ann_ret * 100,
+        )
+    else:
+        logger.warning("  Options return stream has <20 non-zero days")
+
+    return returns
+
+
 # ── Portfolio Combination ───────────────────────────────────────────────────────
 
 def combine_strategies(
@@ -1134,6 +1356,22 @@ def main():
     except Exception as e:
         logger.error("ML alpha failed: %s", e, exc_info=True)
 
+    # H. Options Vol-Carry (IRON_CONDOR on NIFTY)
+    try:
+        options_ret = run_options_vol_carry_strategy(nifty)
+        if options_ret.abs().sum() > 0:
+            strategy_returns["options_vol_carry"] = options_ret
+    except Exception as e:
+        logger.error("Options vol-carry failed: %s", e, exc_info=True)
+
+    # I. PCA Statistical Arbitrage
+    try:
+        pca_ret = run_pca_statarb_strategy(stocks)
+        if pca_ret.abs().sum() > 0:
+            strategy_returns["pca_statarb"] = pca_ret
+    except Exception as e:
+        logger.error("PCA stat-arb failed: %s", e, exc_info=True)
+
     if not strategy_returns:
         logger.error("No strategies produced returns. Check data and modules.")
         return
@@ -1142,6 +1380,32 @@ def main():
 
     # 3. Combine
     result_df = combine_strategies(strategy_returns)
+
+    # ── Options sleeve correlation check ──────────────────────────────────
+    # Log correlation of options_vol_carry vs each equity strategy.
+    # If ρ > 0.4, the tangency optimizer will not treat it as genuinely
+    # diversifying — flag this as a finding to report honestly, not a bug.
+    if "options_vol_carry" in result_df.columns:
+        equity_strategies = [
+            col for col in result_df.columns
+            if col not in ("options_vol_carry", "portfolio",
+                           "hedged_portfolio", "hedged_vt")
+        ]
+        for eq_name in equity_strategies:
+            if eq_name in result_df.columns:
+                corr_val = result_df["options_vol_carry"].corr(result_df[eq_name])
+                if not np.isnan(corr_val) and abs(corr_val) > 0.4:
+                    logger.warning(
+                        "⚠️  options_vol_carry ↔ %s correlation = %.3f (> 0.4). "
+                        "Tangency allocator will not treat this as genuinely "
+                        "diversifying. This is a finding, not a bug.",
+                        eq_name, corr_val,
+                    )
+                else:
+                    logger.info(
+                        "  options_vol_carry ↔ %s correlation = %.3f ✓",
+                        eq_name, corr_val if not np.isnan(corr_val) else 0.0,
+                    )
 
     # 3.5. Dynamic Hedge Overlay (v5.3 technique: Sharpe 0.37 → 1.16)
     if nifty is not None and "Close" in nifty.columns:

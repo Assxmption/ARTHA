@@ -40,7 +40,7 @@ const Shell = ({ children }) => {
         <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
 
         {/* Main Content */}
-        <main id="main-content" className="flex-1 overflow-y-auto relative bg-background transition-colors duration-300">
+        <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden relative bg-background transition-colors duration-300">
           {children}
         </main>
       </div>
