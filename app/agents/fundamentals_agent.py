@@ -349,20 +349,27 @@ def _validate_citations(
 # 3. Guide Harvey-style synthesis (trends, not just display)
 _NARRATION_PROMPT = """You are a senior equity research analyst specializing in Indian markets (NSE).
 
-Given the structured fundamental data below for {symbol}, write a concise narrative analysis.
+Given the structured fundamental data below for {symbol}, write a highly-readable, concise narrative analysis.
 
 ABSOLUTE RULES:
 1. NEVER invent, estimate, or compute any number. Only narrate values present in the data below.
 2. Every numeric value you mention MUST cite its Fact ID in brackets, e.g. [abc12345…].
 3. If a metric is missing, say "not available" — do not guess.
-4. Focus on TRENDS: year-over-year changes, inflection points, and what the numbers mean.
-5. Keep the narrative to 3-5 paragraphs maximum.
+4. MAKE IT READABLE: Do not overwhelm the reader with too many numbers. Focus on the most important inflection points and trends.
+5. FORMATTING: Trim large INR_crore values using Indian numbering terms for readability (e.g., convert 877835.00 to 8.78 Lakh Crore, or 50000.00 to 50k Crore). Wrap ALL numeric values and percentages in **bold** (e.g. **8.78 Lakh Crore** [abc12345...]).
 
-STRUCTURE your analysis as:
-- **Financial Health**: Profitability trends, margin trajectory, earnings quality
-- **Balance Sheet**: Leverage trends, liquidity position, capital efficiency
-- **Growth & Cash Flow**: Revenue/earnings growth rates, cash generation ability
-- **Key Risks**: Any deteriorating metrics, overleveraging, margin compression
+STRUCTURE your analysis strictly with these Markdown headings:
+### Financial Health
+Profitability trends, margin trajectory, earnings quality.
+
+### Balance Sheet
+Leverage trends, liquidity position, capital efficiency.
+
+### Growth & Cash Flow
+Revenue/earnings growth rates, cash generation ability.
+
+### Key Risks
+Any deteriorating metrics, overleveraging, margin compression.
 
 {facts_section}
 
@@ -520,4 +527,95 @@ def narrate_fundamentals(
     )
 
     return narrative_fact
+
+
+
+def stream_fundamentals_narrative(
+    symbol: str,
+    job_id: str,
+    store: FactStore,
+    facts: Optional[list[FundamentalRow]] = None,
+):
+    """
+    Streaming version of narrate_fundamentals. Yields text chunks, and
+    upon completion, validates citations and writes to FactStore.
+    """
+    from app.factstore.schemas import RiskFlag, Severity, NarrativeFact
+    from litellm import completion
+    import logging
+
+    if facts is None:
+        all_facts = store.get_facts_for_symbol(job_id, symbol)
+        facts = [f for f in all_facts if isinstance(f, FundamentalRow)]
+
+    if not facts:
+        logger.warning(f"No facts found for {symbol}. Cannot stream narrative.")
+        yield "## Fundamental Analysis\n\n*No data available to narrate.*"
+        return
+
+    # Yield immediate status so UI is responsive
+    yield f"*Analysing **{len(facts)}** fundamental metrics for **{symbol}**. Synthesizing narrative...*\n\n"
+
+    categorized = _categorize_facts(facts)
+    facts_section = _format_categorized_facts(categorized)
+
+    prompt = _NARRATION_PROMPT.format(
+        symbol=symbol,
+        facts_section=facts_section,
+    )
+
+    try:
+        llm = get_cheap_llm()
+        # crewai.LLM strips the provider prefix from llm.model
+        model_name = llm.model
+        if not "/" in model_name:
+            if "gemini" in model_name:
+                model_name = f"gemini/{model_name}"
+            elif "llama" in model_name:
+                model_name = f"groq/{model_name}"
+        
+        response = completion(
+            model=model_name,
+            messages=[{"role": "user", "content": prompt}],
+            api_key=llm.api_key,
+            base_url=llm.base_url if hasattr(llm, "base_url") else None,
+            stream=True
+        )
+
+        full_text = ""
+        for chunk in response:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                full_text += delta
+                yield delta
+                
+    except Exception as e:
+        logger.error(f"Streaming LLM failed for {symbol}: {e}")
+        yield "\n\n*Error generating narrative.*"
+        return
+
+    # Post-processing: Validate and save to FactStore
+    valid_ids, invalid_ids = _validate_citations(full_text, facts, job_id, store)
+    
+    if invalid_ids:
+        risk_flag = RiskFlag(
+            job_id=job_id,
+            source=f"fundamentals_agent_narration_{symbol}",
+            symbol_or_pair=symbol,
+            flag_type="uncitable_narrative_claim",
+            detail=f"Narrative contains {len(invalid_ids)} invalid citations: {invalid_ids[:5]}.",
+            severity=Severity.WARNING,
+        )
+        store.put_fact(risk_flag)
+
+    narrative_fact = NarrativeFact(
+        job_id=job_id,
+        source=f"fundamentals_agent_narration_{symbol}",
+        agent_name="fundamentals_agent",
+        section="fundamentals_analysis",
+        content=full_text,
+        referenced_fact_ids=valid_ids,
+    )
+    store.put_fact(narrative_fact)
+    logger.info(f"Wrote Streaming NarrativeFact for {symbol}")
 

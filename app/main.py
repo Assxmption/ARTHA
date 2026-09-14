@@ -77,10 +77,12 @@ from app.api.quant_routes import quant_router
 from app.api.analysis_routes import router as analysis_router
 from app.api.simulator_routes import router as simulator_router
 from app.api.company_routes import router as company_router
+from app.api.paper_trade_routes import router as paper_trade_router
 app.include_router(quant_router)
 app.include_router(analysis_router)
 app.include_router(simulator_router)
 app.include_router(company_router)
+app.include_router(paper_trade_router)
 
 # ── Static Files (Frontend) ───────────────────────────────────────────────────
 frontend_dir = Path("frontend/dist")

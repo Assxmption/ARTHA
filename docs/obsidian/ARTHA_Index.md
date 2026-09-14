@@ -25,6 +25,13 @@ This graph is divided into four main architectural pillars:
     - `alpha_loop.py` ➡️ See [[Alpha_Loop]]
     - `backtest.py` ➡️ See [[Walk_Forward_Backtester]]
     - `options_pricing.py` ➡️ See [[Options_Engine]]
+    - `heston.py` ➡️ See [[Options_Heston_Model]]
+    - `merton_jump.py` ➡️ See [[Options_Merton_Model]]
+    - `vol_surface.py` ➡️ See [[Volatility_Surface_Analysis]]
+    - `multi_strategy.py` ➡️ See [[Multi_Strategy_Engine]]
+    - `ml_alpha.py` ➡️ See [[ML_Alpha_Model]]
+    - `factor_backtest.py` ➡️ See [[Factor_Backtester]]
+    - `statarb_backtest.py` ➡️ See [[Stat_Arb_Backtester]]
   - **`factstore/`** ➡️ See [[Fact_Store]]
     - `schemas.py` ➡️ See [[Fact_Schemas]]
     - `store.py`

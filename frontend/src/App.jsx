@@ -9,6 +9,7 @@ import Home from './pages/Home';
 import Watchlist from './pages/Watchlist';
 import NewsSentiment from './pages/NewsSentiment';
 import Simulator from './pages/Simulator';
+import PaperTrading from './pages/PaperTrading';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -27,7 +28,7 @@ const Shell = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-background text-on-background font-body selection:bg-primary selection:text-on-primary transition-colors duration-300 flex flex-col overflow-hidden">
+    <div className="h-screen bg-background text-on-background font-body selection:bg-primary selection:text-on-primary transition-colors duration-300 flex flex-col overflow-hidden">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-primary text-on-primary px-4 py-2 z-50 rounded-sm outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-surface">
         Skip to main content
       </a>
@@ -99,6 +100,13 @@ const AppRoutes = () => {
       <Route path="/simulator" element={
         <ProtectedRoute>
           <Shell><Simulator /></Shell>
+        </ProtectedRoute>
+      } />
+
+      {/* Paper Trading Dashboard */}
+      <Route path="/paper-trading" element={
+        <ProtectedRoute>
+          <Shell><PaperTrading /></Shell>
         </ProtectedRoute>
       } />
     </Routes>

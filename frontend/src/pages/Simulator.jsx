@@ -10,6 +10,7 @@ export default function Simulator() {
   const [starting, setStarting] = useState(false);
   const [capital, setCapital] = useState(1500000);
   const [days, setDays] = useState(365);
+  const [strategyType, setStrategyType] = useState('MULTI_STRATEGY');
   const pollingRef = useRef(null);
 
   // Load existing simulations
@@ -26,7 +27,7 @@ export default function Simulator() {
       const res = await fetch('/api/sim/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ capital, days }),
+        body: JSON.stringify({ capital, days, strategy_type: strategyType }),
       });
       const data = await res.json();
       if (data.sim_id) {
@@ -84,7 +85,7 @@ export default function Simulator() {
       </div>
 
       {/* Controls */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="border border-outline-variant bg-surface p-4">
           <label className="font-ui text-[10px] uppercase tracking-widest text-outline block mb-2">Starting Capital (₹)</label>
           <input
@@ -102,6 +103,19 @@ export default function Simulator() {
             onChange={e => setDays(Number(e.target.value))}
             className="w-full bg-surface-container border border-outline-variant px-3 py-2 font-mono text-sm text-on-surface focus:border-primary focus:outline-none"
           />
+        </div>
+                <div className="border border-outline-variant bg-surface p-4">
+          <label className="font-ui text-[10px] uppercase tracking-widest text-outline block mb-2">Strategy Type</label>
+          <select
+            value={strategyType}
+            onChange={e => setStrategyType(e.target.value)}
+            className="w-full bg-surface-container border border-outline-variant px-3 py-2 font-mono text-sm text-on-surface focus:border-primary focus:outline-none"
+          >
+            <option value="MULTI_STRATEGY">ARTHA Multi-Strategy (Full Quant Engine)</option>
+            <option value="EQUITY_LONG_ONLY">Equity Long-Only</option>
+            <option value="PCA_STATARB">PCA Stat-Arb</option>
+            <option value="IRON_CONDOR">NIFTY Iron Condor</option>
+          </select>
         </div>
         <div className="border border-outline-variant bg-surface p-4 flex items-end">
           <button
@@ -174,6 +188,49 @@ export default function Simulator() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              </div>
+
+              {/* Trade Log Section */}
+              <div className="border border-outline-variant bg-surface overflow-hidden mt-4">
+                <div className="border-b border-outline-variant bg-surface-container-low p-3">
+                  <span className="font-ui text-[10px] uppercase tracking-widest text-on-surface">Actual Trades Taken</span>
+                </div>
+                <div className="p-0 overflow-x-auto max-h-96">
+                  {activeSim.trade_log && activeSim.trade_log.length > 0 ? (
+                    <table className="w-full text-left font-mono text-xs relative">
+                      <thead className="sticky top-0 bg-surface-container-low border-b border-outline-variant/50">
+                        <tr>
+                          <th className="p-3 font-normal text-outline">Date</th>
+                          <th className="p-3 font-normal text-outline">Action</th>
+                          <th className="p-3 font-normal text-outline">Symbol</th>
+                          <th className="p-3 font-normal text-outline text-right">Price</th>
+                          <th className="p-3 font-normal text-outline text-right">Qty</th>
+                          <th className="p-3 font-normal text-outline text-right">P&L</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {activeSim.trade_log.map((trade, idx) => (
+                          <tr key={idx} className={`border-b border-outline-variant/30 ${idx % 2 === 0 ? 'bg-surface' : 'bg-surface-container-lowest'}`}>
+                            <td className="p-3 text-on-surface-variant">{trade.date}</td>
+                            <td className={`p-3 ${trade.action === 'BUY' ? 'text-secondary' : trade.action === 'SELL' ? 'text-error' : 'text-on-surface-variant'}`}>{trade.action}</td>
+                            <td className="p-3 text-on-surface">{trade.symbol}</td>
+                            <td className="p-3 text-right tabular-nums">{formatCurrency(trade.price)}</td>
+                            <td className="p-3 text-right tabular-nums">{trade.quantity || 1}</td>
+                            <td className={`p-3 text-right tabular-nums ${trade.pnl > 0 ? 'text-secondary' : trade.pnl < 0 ? 'text-error' : 'text-on-surface-variant'}`}>
+                              {trade.pnl !== undefined && trade.pnl !== null ? formatCurrency(trade.pnl) : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="p-8 text-center text-on-surface-variant font-mono text-xs">
+                      {strategyType === 'MULTI_STRATEGY' ? 
+                        "Multi-Strategy operates as a continuous portfolio allocator. It scales position weights dynamically based on vol-targets and tangency correlations rather than executing discrete standalone trades."
+                        : "No discrete trades recorded for this simulation."}
+                    </div>
+                  )}
                 </div>
               </div>
             </>

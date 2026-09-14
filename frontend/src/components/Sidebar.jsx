@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, Eye, Activity, FileText, Newspaper, BarChart2, Database } from 'lucide-react';
+import { Home, Eye, Activity, FileText, Newspaper, BarChart2, Database, Zap } from 'lucide-react';
 
 export default function Sidebar({ isOpen, setIsOpen }) {
   const navigate = useNavigate();
@@ -12,6 +12,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
     { label: 'Fundamentals', path: '/fundamentals/RELIANCE', icon: <FileText size={16} /> },
     { label: 'News & Sentiment', path: '/news/RELIANCE', icon: <Newspaper size={16} /> },
     { label: 'Backtest Lab', path: '/simulator', icon: <BarChart2 size={16} /> },
+    { label: 'Paper Trading', path: '/paper-trading', icon: <Zap size={16} /> },
   ];
 
   const isActive = (itemPath) => {

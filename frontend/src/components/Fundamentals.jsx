@@ -1,39 +1,72 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FileText, ArrowLeft, Loader2, AlertTriangle, ChevronRight, Activity, TrendingUp, Search } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 
 export default function Fundamentals() {
   const { symbol } = useParams();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loadingData, setLoadingData] = useState(true);
+  const [narrative, setNarrative] = useState(null);
+  const [loadingNarrative, setLoadingNarrative] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!symbol) return;
     
-    setLoading(true);
+    setLoadingData(true);
+    setLoadingNarrative(true);
+    setError(null);
+
+    // Fetch tabular data first (fast)
     fetch(`/api/quant/fundamentals/${symbol}`)
       .then(res => {
         if (!res.ok) throw new Error(`Failed to fetch fundamentals for ${symbol}`);
         return res.json();
       })
       .then(res => {
-        setData(res.data);
-        setError(null);
+        setData({ metrics: res.data });
       })
       .catch(err => {
         console.error(err);
         setError(err.message);
       })
-      .finally(() => setLoading(false));
+      .finally(() => setLoadingData(false));
+
+    // Fetch narrative as SSE stream
+    fetch(`/api/quant/fundamentals/${symbol}/narrative_stream`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Failed to start narrative stream for ${symbol}`);
+        
+        // Hide loading spinner as soon as the connection opens
+        setLoadingNarrative(false); 
+        
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let streamText = "";
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          streamText += decoder.decode(value, { stream: true });
+          // Strip out the [abc12345...] citation tags for cleaner reading
+          const cleaned = streamText.replace(/\[[a-f0-9]{8}(?:…|\.\.\.)\]/gi, '');
+          setNarrative(cleaned);
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        setNarrative("## Fundamental Analysis\n\n*Error generating narrative.*");
+        setLoadingNarrative(false);
+      });
   }, [symbol]);
 
   // Transform data into an array of years for the table
-  const years = data ? Object.keys(data).sort((a, b) => b - a) : []; // Descending (latest first)
-  const metrics = data && years.length > 0 ? Object.keys(data[years[0]]) : [];
+  const years = data ? Object.keys(data.metrics).sort((a, b) => b - a) : []; // Descending (latest first)
+  const metrics = data && years.length > 0 ? Object.keys(data.metrics[years[0]]) : [];
 
-  if (loading) {
+  if (loadingData) {
     return (
       <div className="flex flex-col items-center justify-center h-full min-h-[60vh] bg-surface-dim">
         <div className="w-48 h-[1px] bg-surface-container relative overflow-hidden mb-4">
@@ -52,7 +85,7 @@ export default function Fundamentals() {
           <p className="font-ui text-xs uppercase tracking-widest text-error mb-2">System Error</p>
           <p className="font-mono text-sm text-on-surface">{error}</p>
           <button 
-            onClick={() => { setError(null); setLoading(true); }} 
+            onClick={() => { setError(null); setLoadingData(true); setLoadingNarrative(true); }} 
             className="mt-6 border border-error px-4 py-2 font-ui text-[10px] uppercase tracking-wider text-error hover:bg-error/10 transition-colors"
           >
             Retry Connection
@@ -85,55 +118,49 @@ export default function Fundamentals() {
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
-        {/* Narrative Panel (Editorial Column) */}
-        <div className="w-1/3 min-w-[320px] max-w-md border-r border-outline-variant bg-surface p-12 overflow-y-auto">
-          <div className="flex items-center gap-2 mb-8 pb-4 border-b border-outline-variant">
+      <div className="flex-1 flex flex-col overflow-y-auto">
+        {/* Narrative Panel (Editorial Top) */}
+        <div className="border-b border-outline-variant bg-surface p-12 lg:px-24">
+          <div className="flex items-center gap-2 mb-8 pb-4 border-b border-outline-variant max-w-4xl mx-auto">
             <Activity size={16} className="text-primary" />
             <h3 className="font-ui text-xs uppercase tracking-widest text-primary">Intelligence Synthesis</h3>
           </div>
           
-          <article className="prose prose-sm dark:prose-invert font-body text-on-surface leading-loose">
-            <p className="text-lg first-letter:text-5xl first-letter:font-display first-letter:text-primary first-letter:mr-1 first-letter:float-left">
-              Reviewing the fundamental trajectory of <strong>{symbol}</strong> across the last {years.length} fiscal periods reveals structural shifts in operating leverage.
-            </p>
-            
-            {years.length >= 2 && data[years[0]]['revenue'] && data[years[1]]['revenue'] && (
-              <p>
-                Revenue for FY{years[0]} printed at <span className="font-mono text-primary bg-primary/10 px-1">INR {Number(data[years[0]]['revenue'].value).toLocaleString('en-IN')}Cr</span><sup className="text-primary font-mono text-[10px] ml-0.5 cursor-pointer hover:underline">[1]</sup>, 
-                showcasing a material deviation from the <span className="font-mono text-outline">INR {Number(data[years[1]]['revenue'].value).toLocaleString('en-IN')}Cr</span> reported in the preceding year. 
-                This top-line movement suggests evolving demand characteristics in the core segment.
-              </p>
-            )}
-            
-            {years.length >= 2 && data[years[0]]['net_income'] && data[years[1]]['net_income'] && (
-              <p>
-                Crucially, Net Income transitioned from <span className="font-mono text-outline">INR {Number(data[years[1]]['net_income'].value).toLocaleString('en-IN')}Cr</span> 
-                to <span className="font-mono text-primary bg-primary/10 px-1">INR {Number(data[years[0]]['net_income'].value).toLocaleString('en-IN')}Cr</span><sup className="text-primary font-mono text-[10px] ml-0.5 cursor-pointer hover:underline">[2]</sup>. 
-                The disparity between revenue growth and net income retention highlights changing cost-of-capital dynamics and operational efficiencies.
-              </p>
-            )}
-
-            <div className="mt-8 p-4 bg-surface-container-low border-l-2 border-primary">
-              <h4 className="font-ui text-[10px] uppercase tracking-widest text-on-surface mb-2 flex items-center gap-2"><TrendingUp size={12}/> Quant Note</h4>
-              <p className="text-xs text-on-surface-variant m-0 font-body">
-                The current print aligns with a statistical regime shift detected in the volatility surface. Margin compression is heavily monitored by the automated engine.
-              </p>
-            </div>
-            
-            <div className="mt-12 pt-6 border-t border-outline-variant/30 flex flex-col gap-2">
-              <h4 className="font-ui text-[10px] uppercase tracking-widest text-outline">Source References</h4>
-              <div className="flex flex-col gap-1 text-xs text-on-surface-variant font-mono">
-                <span className="flex gap-2"><span className="text-primary">[1]</span> <span>Consolidated P&L Statement FY{years[0]}</span></span>
-                <span className="flex gap-2"><span className="text-primary">[2]</span> <span>Audited Financials, Net Margin row</span></span>
+          <div className="max-w-4xl mx-auto">
+            {loadingNarrative ? (
+              <div className="flex flex-col items-center justify-center py-12">
+                <Loader2 size={24} className="text-primary animate-spin mb-4" />
+                <p className="font-mono text-[10px] uppercase tracking-widest text-outline animate-pulse">Synthesizing Fundamental Narrative...</p>
               </div>
-            </div>
-          </article>
+            ) : (
+              <article className="prose prose-sm md:prose-base dark:prose-invert font-body text-on-surface leading-loose max-w-none prose-p:mb-6">
+                <ReactMarkdown
+                  components={{
+                    h3: ({node, ...props}) => (
+                      <h3 className="font-ui uppercase tracking-widest text-primary text-xs mt-10 mb-4 pb-2 border-b border-outline-variant/50" {...props} />
+                    ),
+                    strong: ({node, ...props}) => (
+                      <strong className="text-on-surface font-mono font-medium bg-surface-container-low px-1 py-0.5 rounded" {...props} />
+                    )
+                  }}
+                >
+                  {narrative}
+                </ReactMarkdown>
+                
+                <div className="mt-8 p-4 bg-surface-container-low border-l-2 border-primary">
+                  <h4 className="font-ui text-[10px] uppercase tracking-widest text-on-surface mb-2 flex items-center gap-2"><TrendingUp size={12}/> Quant Note</h4>
+                  <p className="text-xs text-on-surface-variant m-0 font-body">
+                    The current print aligns with a statistical regime shift detected in the volatility surface. Margin compression is heavily monitored by the automated engine.
+                  </p>
+                </div>
+              </article>
+            )}
+          </div>
         </div>
 
         {/* Multi-year Data Table (Data Grid) */}
-        <div className="flex-1 bg-surface-container-lowest flex flex-col overflow-hidden">
-          <div className="p-4 px-8 border-b border-outline-variant bg-surface flex justify-between items-center">
+        <div className="bg-surface-container-lowest flex flex-col flex-1">
+          <div className="p-4 px-12 lg:px-24 border-b border-outline-variant bg-surface flex justify-between items-center">
             <span className="font-ui text-[10px] uppercase tracking-widest text-on-surface flex items-center gap-2">
               <FileText size={14} className="text-outline" />
               Row-Level Ledger (INR Crore)
@@ -143,8 +170,8 @@ export default function Fundamentals() {
             </div>
           </div>
           
-          <div className="flex-1 overflow-auto">
-            <table className="w-full text-left font-mono text-sm whitespace-nowrap">
+          <div className="flex-1 w-full max-w-7xl mx-auto p-0 lg:p-12 overflow-x-auto">
+            <table className="w-full text-left font-mono text-sm whitespace-nowrap mb-12">
               <thead className="bg-surface sticky top-0 z-10 shadow-sm">
                 <tr>
                   <th scope="col" className="p-4 px-8 border-b border-outline-variant font-normal text-on-surface-variant text-xs uppercase tracking-wider font-ui w-1/4">Metric</th>
@@ -157,7 +184,7 @@ export default function Fundamentals() {
               <tbody>
                 {metrics.map((metric, idx) => {
                   // Calculate a simple sparkline trend path
-                  const values = years.map(y => data[y][metric]?.value || 0).reverse();
+                  const values = years.map(y => data.metrics[y][metric]?.value || 0).reverse();
                   const maxVal = Math.max(...values, 1);
                   const minVal = Math.min(...values, 0);
                   const range = maxVal - minVal || 1;
@@ -170,7 +197,7 @@ export default function Fundamentals() {
                         {metric.replace(/_/g, ' ')}
                       </td>
                       {years.map(year => {
-                        const cell = data[year][metric];
+                        const cell = data.metrics[year][metric];
                         return (
                           <td key={year} className="p-4 px-8 text-right text-on-surface-variant group-hover:text-primary transition-colors">
                             {cell ? (

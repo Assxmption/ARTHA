@@ -272,7 +272,7 @@ async def get_pairs():
 
 
 @quant_router.get("/fundamentals/{symbol}")
-async def get_fundamentals(symbol: str):
+def get_fundamentals(symbol: str):
     """Get multi-year row-level fundamentals for a specific symbol."""
     from app.data.fundamentals import get_full_fundamentals
     
@@ -295,10 +295,85 @@ async def get_fundamentals(symbol: str):
             "symbol": symbol.upper(),
             "data": data_by_year
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching fundamentals for {symbol}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@quant_router.get("/fundamentals/{symbol}/narrative")
+@quant_router.get("/fundamentals/{symbol}/narrative_stream")
+def stream_fundamentals_narrative_route(symbol: str):
+    """Stream LLM narrative for a specific symbol's fundamentals."""
+    from app.data.fundamentals import get_full_fundamentals
+    from app.factstore.store import FactStore
+    from app.agents.fundamentals_agent import stream_fundamentals_narrative
+    from fastapi.responses import StreamingResponse
+    import time
+    
+    def generator():
+        # Yield immediately so the frontend stops showing its loading spinner
+        # and starts displaying the stream
+        yield f"*Compiling financial statements and retrieving row-level metrics for {symbol.upper()}...*\n\n"
+        
+        try:
+            rows = get_full_fundamentals(symbol.upper())
+            if not rows:
+                yield f"No fundamental data found for {symbol.upper()}."
+                return
+                
+            store = FactStore()
+            job_id = f"ui_fund_{symbol.upper()}_{int(time.time())}"
+            for row in rows:
+                row.job_id = job_id
+            store.put_facts(rows)
+            
+            for chunk in stream_fundamentals_narrative(symbol.upper(), job_id, store, rows):
+                yield chunk
+        except Exception as e:
+            logger.error(f"Error streaming fundamentals narrative for {symbol}: {e}")
+            yield f"\n\n*Error generating narrative: {str(e)}*"
+
+    # StreamingResponse with a synchronous generator will run it in a threadpool,
+    # preventing event loop blocking.
+    return StreamingResponse(generator(), media_type="text/plain")
+
+def get_fundamentals_narrative(symbol: str):
+    """Generate LLM narrative for a specific symbol's fundamentals."""
+    from app.data.fundamentals import get_full_fundamentals
+    from app.factstore.store import FactStore
+    from app.agents.fundamentals_agent import narrate_fundamentals
+    import time
+    
+    try:
+        rows = get_full_fundamentals(symbol.upper())
+        if not rows:
+            raise HTTPException(status_code=404, detail=f"No fundamental data found for {symbol}")
+            
+        # Run the LLM narrator model
+        try:
+            store = FactStore()
+            job_id = f"ui_fund_{symbol.upper()}_{int(time.time())}"
+            # Assign job_id to rows so citations can be validated
+            for row in rows:
+                row.job_id = job_id
+            store.put_facts(rows)
+            
+            narrative_fact = narrate_fundamentals(symbol.upper(), job_id, store, rows)
+            narrative = narrative_fact.content if narrative_fact else "## Fundamental Analysis\n\n*LLM narration unavailable.*"
+        except Exception as e:
+            logger.error(f"Failed to generate narrative for {symbol}: {e}")
+            narrative = "## Fundamental Analysis\n\n*Error generating narrative.*"
+            
+        return {
+            "symbol": symbol.upper(),
+            "narrative": narrative
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching fundamentals narrative for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @quant_router.get("/ohlcv/{symbol}")
 async def get_ohlcv(symbol: str, days: int = 180, interval: str = "1d"):

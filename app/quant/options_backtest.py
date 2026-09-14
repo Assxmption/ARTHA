@@ -138,6 +138,7 @@ class OptionsBacktestResult:
     sortino_ratio: float = 0.0
     max_drawdown_pct: float = 0.0
     avg_margin_used: float = 0.0
+    peak_margin_used: float = 0.0  # Max concurrent margin — correct denominator
     capital_efficiency: float = 0.0   # return / avg margin
     trades: list[OptionsTradeRecord] = field(default_factory=list)
     daily_pnl: list[float] = field(default_factory=list)
@@ -779,6 +780,7 @@ class OptionsBacktester:
             sortino_ratio=round(sortino, 4),
             max_drawdown_pct=round(max_dd_pct, 2),
             avg_margin_used=round(avg_margin, 2),
+            peak_margin_used=round(peak_margin, 2),
             capital_efficiency=round(total_pnl / max(avg_margin, 1) * 100 / n_years, 2),
             trades=trades,
             daily_pnl=list(daily_pnl),

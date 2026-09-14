@@ -341,12 +341,12 @@ async def search_symbols(q: str):
                 name = s["name"].lower()
                 
                 if sym == q_lower: return 100
-                if sym.startswith(q_lower): return 50
-                if name.startswith(q_lower): return 40
+                if sym.startswith(q_lower): return 80
+                if name.startswith(q_lower): return 60
                 
-                # Check if any word in the name starts with the query (e.g., 'm' matches 'Tata Motors')
+                # Check if any word in the name starts with the query
                 words = name.split()
-                if any(w.startswith(q_lower) for w in words): return 30
+                if any(w.startswith(q_lower) for w in words): return 40
                 
                 if q_lower in sym: return 10
                 if q_lower in name: return 5

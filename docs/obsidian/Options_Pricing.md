@@ -1,7 +1,7 @@
 # Options Pricing Models
 
 **Status**: Implemented & Validated
-**Path**: `app/quant/options_pricing.py`, `app/quant/heston.py`, `app/quant/merton_jump.py`
+**Path**: `app/quant/options_pricing.py` (See also: [[Options_Heston_Model]], [[Options_Merton_Model]], [[Volatility_Surface_Analysis]])
 
 ARTHA's Options Pricing sub-module provides highly deterministic and mathematical frameworks for pricing options and calculating Greeks. It scales from basic standard models to institutional-grade stochastic and jump-diffusion models.
 

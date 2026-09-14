@@ -160,6 +160,10 @@ export default function Home() {
                 {sortBy === 'changePct' ? 'Top Losers' : 'Active (Cont)'}
               </h2>
             </div>
+            <div className="flex gap-2">
+              <button onClick={() => setSortBy('changePct')} className={`font-ui text-[10px] uppercase tracking-wider ${sortBy === 'changePct' ? 'text-secondary' : 'text-outline hover:text-on-surface'}`}>%</button>
+              <button onClick={() => setSortBy('volume')} className={`font-ui text-[10px] uppercase tracking-wider ${sortBy === 'volume' ? 'text-primary' : 'text-outline hover:text-on-surface'}`}>Vol</button>
+            </div>
           </div>
           <div className="flex flex-col gap-1">
             {displayLosers.map(stock => (
@@ -231,7 +235,13 @@ export default function Home() {
       {/* Full watchlist row */}
       <div className="mt-6 border border-outline-variant bg-surface overflow-hidden">
         <div className="border-b border-outline-variant bg-surface-container-low p-3 flex justify-between items-center">
-          <span className="font-ui text-[10px] uppercase tracking-widest text-on-surface">All Instruments</span>
+          <div className="flex items-center gap-4">
+            <span className="font-ui text-[10px] uppercase tracking-widest text-on-surface">All Instruments</span>
+            <div className="flex gap-2 border-l border-outline-variant pl-4">
+              <button onClick={() => setSortBy('changePct')} className={`font-ui text-[10px] uppercase tracking-wider ${sortBy === 'changePct' ? 'text-secondary' : 'text-outline hover:text-on-surface'}`}>%</button>
+              <button onClick={() => setSortBy('volume')} className={`font-ui text-[10px] uppercase tracking-wider ${sortBy === 'volume' ? 'text-primary' : 'text-outline hover:text-on-surface'}`}>Vol</button>
+            </div>
+          </div>
           <button onClick={() => navigate('/watchlist')} className="font-ui text-[10px] uppercase tracking-wider text-primary hover:underline">
             Full Watchlist →
           </button>

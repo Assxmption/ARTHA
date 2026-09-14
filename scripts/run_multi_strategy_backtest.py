@@ -926,13 +926,30 @@ def run_options_vol_carry_strategy(
         logger.warning("  No trades generated — check regime/VRP filters")
         return pd.Series(0.0, index=nifty_close.index, name="options_vol_carry")
 
-    # Convert daily P&L to daily returns using peak margin as denominator.
-    # This is conservative and matches _compute_metrics' convention.
-    # Trade-off: using avg_margin would inflate returns on sparse windows
-    # where margin is near zero most days; peak_margin is the actual
-    # capital at risk and produces honest risk-adjusted metrics.
+    # Convert daily P&L to daily returns.
+    #
+    # Bug fix (Sep 2026): The original code used avg_margin_used as the
+    # denominator, which can be tiny on sparse windows (few active trades,
+    # margin near zero most days). This produced amplified garbage returns
+    # (e.g. -3201% total, -258% annualized) that poisoned the portfolio.
+    #
+    # Correct approach: use the maximum of:
+    #   (a) peak_margin_used — the actual concurrent capital at risk during
+    #       the backtest, as computed inside OptionsBacktester, and
+    #   (b) capital * 0.10 — a floor based on the allocated capital (assumes
+    #       at least 10% of the options sleeve capital is always reserved
+    #       as margin for this strategy, even on quiet days).
+    #
+    # This ensures returns are never amplified beyond what the real capital
+    # allocation implies, while still reflecting true risk when margin is
+    # legitimately high.
     daily_pnl = result.daily_pnl
-    peak_margin = max(result.avg_margin_used, 1.0)
+    options_capital = capital * 0.10  # 10% of total capital = options sleeve
+    denominator = max(result.peak_margin_used, options_capital, 1.0)
+    logger.info(
+        "  Return denominator: peak_margin=%.0f, capital_floor=%.0f → using %.0f",
+        result.peak_margin_used, options_capital, denominator,
+    )
 
     # Align daily P&L to the NIFTY index dates
     # The backtester returns daily_pnl as a list aligned to the dates
@@ -948,7 +965,7 @@ def run_options_vol_carry_strategy(
         )
 
     # Normalize P&L to returns
-    returns = pnl_series / peak_margin
+    returns = pnl_series / denominator
     returns.name = "options_vol_carry"
 
     # Report performance on the return series
@@ -972,20 +989,35 @@ def run_options_vol_carry_strategy(
 def combine_strategies(
     strategy_returns: dict[str, pd.Series],
     target_vol: float = 0.15,
+    weight_lookback: int = 252,
+    rebalance_every: int = 63,
 ) -> pd.DataFrame:
     """
-    Combine strategy return streams using vol-targeting + Sharpe²-proportional allocation.
+    Combine strategy return streams using vol-targeting + rolling-window
+    correlation-aware allocation.
 
-    This is the multi-strategy portfolio construction step.
+    Bug fix (Sep 2026): The original code computed tangency weights using
+    the full sample, which is look-ahead bias — the allocator could see
+    future performance. This version uses a rolling window (default 252
+    trading days) and rebalances every `rebalance_every` days. Each
+    rebalance uses only data available up to that date.
+
+    Args:
+        strategy_returns: {name: daily_return_series}
+        target_vol: target annualized volatility per strategy
+        weight_lookback: days of history to estimate weights
+        rebalance_every: days between weight re-estimations
     """
-    logger.info("═══ Combining Strategies ═══")
+    logger.info("═══ Combining Strategies (Rolling-Window Allocation) ═══")
 
     # Align all series to common dates
     df = pd.DataFrame(strategy_returns)
     df = df.dropna(how='all').fillna(0)
+    n_days = len(df)
+    columns = list(df.columns)
 
-    # Per-strategy metrics
-    for col in df.columns:
+    # Per-strategy full-sample metrics (informational only — NOT used for allocation)
+    for col in columns:
         arr = df[col].values
         if np.std(arr) > 0:
             sharpe = (np.mean(arr) / np.std(arr)) * np.sqrt(252)
@@ -994,75 +1026,105 @@ def combine_strategies(
         else:
             sharpe = ann_ret = ann_vol = 0
         logger.info(
-            "  %s: Sharpe=%.3f, Ann.Ret=%.2f%%, Ann.Vol=%.2f%%",
+            "  %s: Full-sample Sharpe=%.3f, Ann.Ret=%.2f%%, Ann.Vol=%.2f%% "
+            "(informational — NOT used for allocation weights)",
             col, sharpe, ann_ret * 100, ann_vol * 100,
         )
 
-    # Combined portfolio: vol-targeted, then correlation-aware allocation
-    # Scale each strategy to target_vol individually
+    # Vol-target each strategy individually (rolling, no look-ahead)
     scaled = pd.DataFrame(index=df.index)
-    for col in df.columns:
+    for col in columns:
         rolling_vol = df[col].rolling(60, min_periods=20).std() * np.sqrt(252)
         scale = target_vol / rolling_vol.replace(0, np.nan).ffill().fillna(target_vol)
         scale = scale.clip(upper=3.0)  # Cap leverage at 3x
         scaled[col] = df[col] * scale
 
-    # ── Correlation-aware Maximum Sharpe allocation ──────────────
-    # Old: Sharpe²-proportional (Kelly for uncorrelated). Problem: top-3
-    # strategies are ρ=0.61-0.73, so uncorrelated assumption over-allocates.
-    # New: tangency portfolio w* ∝ Σ⁻¹μ with Ledoit-Wolf shrinkage.
-
-    # Compute mean excess returns on vol-targeted series
+    # ── Rolling-window tangency allocation (no look-ahead) ─────────
+    # Recompute allocation weights every `rebalance_every` days using
+    # only data up to each rebalance date.  Between rebalances, weights
+    # are held constant.
     daily_rf = (1 + 0.065) ** (1/252) - 1  # India 10Y
-    mu = (scaled.mean() - daily_rf) * 252
+    n_assets = len(columns)
 
-    # Ledoit-Wolf shrinkage covariance
-    sample_cov = scaled.dropna().cov() * 252
-    n_assets = len(sample_cov)
-    n_obs = len(scaled.dropna())
+    # Start with equal weights until we have enough data
+    current_weights = {col: 1.0 / n_assets for col in columns}
+    weight_history = []  # [(date, weights_dict), ...]
+    combined = pd.Series(0.0, index=df.index, name="portfolio")
 
-    # Shrinkage target: diagonal (uncorrelated model)
-    target_cov = np.diag(np.diag(sample_cov.values))
-    # Shrinkage intensity
-    delta = min(0.3, n_assets / max(n_obs, 1))
-    shrunk_cov = (1 - delta) * sample_cov.values + delta * target_cov
-    shrunk_cov += np.eye(n_assets) * 1e-6  # Ridge for stability
+    warmup = max(weight_lookback, 60)
+    last_rebalance = -rebalance_every  # Force rebalance at first eligible day
 
-    try:
-        cov_inv = np.linalg.inv(shrunk_cov)
-        raw_w = cov_inv @ mu.values
-        raw_w = np.maximum(raw_w, 0)  # Long-only constraint
+    for i in range(n_days):
+        # Check if we should rebalance
+        if i >= warmup and (i - last_rebalance) >= rebalance_every:
+            # Compute weights using data [i-weight_lookback : i] only
+            window_data = scaled.iloc[max(0, i - weight_lookback):i]
 
-        if raw_w.sum() > 1e-10:
-            raw_w /= raw_w.sum()
-            weights = {col: float(w) for col, w in zip(mu.index, raw_w)}
-            logger.info("  Allocation: Max-Sharpe tangency (correlation-aware)")
-        else:
-            raise ValueError("All tangency weights zero")
-    except (np.linalg.LinAlgError, ValueError):
-        # Fallback: Sharpe²-proportional
-        logger.info("  Allocation: Sharpe² fallback (tangency failed)")
-        sharpes = {}
-        for col in df.columns:
-            arr = df[col].values
-            s = (np.mean(arr) / max(np.std(arr), 1e-8)) * np.sqrt(252)
-            sharpes[col] = max(s, 0.01)
-        sharpe_sq = {k: v ** 2 for k, v in sharpes.items()}
-        total_sq = sum(sharpe_sq.values())
-        weights = {k: v / total_sq for k, v in sharpe_sq.items()}
+            if len(window_data) >= 60:
+                mu = (window_data.mean() - daily_rf) * 252
+                sample_cov = window_data.cov() * 252
 
-    # Apply caps (35%) and floors (5%), then renormalize
-    for k in weights:
-        weights[k] = max(min(weights[k], 0.35), 0.05)
-    total_w = sum(weights.values())
-    weights = {k: v / total_w for k, v in weights.items()}
+                # Ledoit-Wolf shrinkage
+                target_cov = np.diag(np.diag(sample_cov.values))
+                n_obs = len(window_data)
+                delta = min(0.3, n_assets / max(n_obs, 1))
+                shrunk_cov = (1 - delta) * sample_cov.values + delta * target_cov
+                shrunk_cov += np.eye(n_assets) * 1e-6  # Ridge for stability
 
-    logger.info("  Allocation weights: %s",
-                {k: f"{v:.1%}" for k, v in weights.items()})
+                try:
+                    cov_inv = np.linalg.inv(shrunk_cov)
+                    raw_w = cov_inv @ mu.values
+                    raw_w = np.maximum(raw_w, 0)  # Long-only
 
-    # Weighted combination
-    combined = sum(scaled[col] * weights[col] for col in scaled.columns)
+                    if raw_w.sum() > 1e-10:
+                        raw_w /= raw_w.sum()
+                        current_weights = {
+                            col: float(w) for col, w in zip(columns, raw_w)
+                        }
+                    else:
+                        raise ValueError("All tangency weights zero")
+                except (np.linalg.LinAlgError, ValueError):
+                    # Fallback: Sharpe²-proportional on the window
+                    sharpes = {}
+                    for col in columns:
+                        arr = window_data[col].values
+                        s = (np.mean(arr) / max(np.std(arr), 1e-8)) * np.sqrt(252)
+                        sharpes[col] = max(s, 0.01)
+                    sharpe_sq = {k: v ** 2 for k, v in sharpes.items()}
+                    total_sq = sum(sharpe_sq.values())
+                    current_weights = {k: v / total_sq for k, v in sharpe_sq.items()}
+
+                # Apply caps (35%) and floors (5%), then renormalize
+                for k in current_weights:
+                    current_weights[k] = max(min(current_weights[k], 0.35), 0.05)
+                total_w = sum(current_weights.values())
+                current_weights = {k: v / total_w for k, v in current_weights.items()}
+
+                last_rebalance = i
+                weight_history.append((df.index[i], dict(current_weights)))
+
+        # Apply current weights
+        combined.iloc[i] = sum(
+            scaled[col].iloc[i] * current_weights[col] for col in columns
+        )
+
     combined.name = "portfolio"
+
+    # Log weight history summary
+    if weight_history:
+        logger.info("  %d weight rebalances performed", len(weight_history))
+        # Log first, middle, and last rebalance weights
+        for label, idx in [
+            ("First", 0), ("Mid", len(weight_history) // 2), ("Last", -1),
+        ]:
+            date, w = weight_history[idx]
+            logger.info(
+                "  %s rebalance (%s): %s",
+                label, date.strftime("%Y-%m-%d"),
+                {k: f"{v:.1%}" for k, v in w.items()},
+            )
+    else:
+        logger.warning("  No rebalances — insufficient data for rolling allocation")
 
     result_df = df.copy()
     result_df["portfolio"] = combined
@@ -1098,10 +1160,23 @@ def dynamic_hedge_overlay(
         Hedged portfolio return series
     """
     if hedge_ratios is None:
-        # Optimized for tangency-weighted portfolio (lower beta from
-        # higher momentum allocation). Less hedge in bull/sideways to
-        # capture more of the reduced beta premium.
-        hedge_ratios = {"BULL": 0.15, "BEAR": 0.80, "SIDEWAYS": 0.45}
+        # Conservative priors — NOT optimized on the backtest sample.
+        #
+        # Bug fix (Sep 2026): The original ratios {BULL: 0.15, BEAR: 0.80,
+        # SIDEWAYS: 0.45} were tuned to maximize Sharpe on the full 12-year
+        # sample, which is look-ahead bias. These conservative defaults are
+        # based on general portfolio construction principles:
+        #   - BEAR 0.70: hedge most of beta in drawdowns (well-supported in
+        #     literature: Asness et al. 2012, "Value and Momentum Everywhere")
+        #   - BULL 0.30: maintain some hedge even in bull markets to dampen
+        #     drawdowns from sudden reversals (2020 COVID crash was ~35% in
+        #     3 weeks during a "bull" regime)
+        #   - SIDEWAYS 0.50: middle-of-road when regime is unclear
+        #
+        # If you want to optimize these, do it walk-forward: train on
+        # [t-504 : t], validate on [t : t+252], sweep over a 3D grid.
+        # Never optimize on the full sample.
+        hedge_ratios = {"BULL": 0.30, "BEAR": 0.70, "SIDEWAYS": 0.50}
 
     logger.info("═══ Dynamic Hedge Overlay ═══")
     logger.info("  Hedge ratios: %s", hedge_ratios)
