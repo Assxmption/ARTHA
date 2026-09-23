@@ -33,6 +33,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from app.quant.live_strategy import LiveStrategyEngine, PortfolioTarget
+
 logger = logging.getLogger(__name__)
 
 
@@ -341,11 +343,11 @@ class MarketDataFeed:
 
     def fetch_historical(
         self, period: str = "2y", interval: str = "1d",
-    ) -> dict[str, pd.Series]:
+    ) -> dict[str, pd.DataFrame]:
         """
-        Fetch historical close prices for strategy signals.
+        Fetch historical OHLCV data for strategy signals.
 
-        Returns {symbol: pd.Series of daily close prices}.
+        Returns {symbol: pd.DataFrame with Close, Volume columns}.
         """
         try:
             import yfinance as yf
@@ -366,9 +368,16 @@ class MarketDataFeed:
                 try:
                     if len(self.symbols) == 1:
                         close = data["Close"].dropna()
+                        volume = data.get("Volume", pd.Series(dtype=float))
                     else:
                         close = data["Close"][yf_sym].dropna()
-                    result[sym] = close
+                        volume = data.get("Volume", pd.DataFrame()
+                                          ).get(yf_sym, pd.Series(dtype=float))
+                    df = pd.DataFrame({
+                        "Close": close,
+                        "Volume": volume.reindex(close.index),
+                    })
+                    result[sym] = df
                 except (KeyError, IndexError):
                     pass
             return result
@@ -576,6 +585,19 @@ class PaperTradingDaemon:
         self.feed = MarketDataFeed(symbols)
         self.broker = VirtualBroker(initial_capital, self.persistence)
 
+        # Live strategy engine — full multi-strategy signal generation
+        self.engine = LiveStrategyEngine(
+            symbols=symbols,
+            model_dir="data_cache/models",
+        )
+        self._last_target: Optional[PortfolioTarget] = None
+
+        # Forward-test validation tracker
+        self._forward_test_start_nav: Optional[float] = None
+        self._forward_test_start_date: Optional[date] = None
+        self._daily_returns: list[float] = []  # For Sharpe computation
+        self._prev_nav: Optional[float] = None
+
         # Schedule
         self.rebalance_interval = rebalance_interval_min
         self.weight_rebalance_days = weight_rebalance_days
@@ -633,6 +655,9 @@ class PaperTradingDaemon:
         self._state = DaemonState.RUNNING
         self._started_at = datetime.now()
         self._today_start_nav = self.broker.nav
+        self._forward_test_start_nav = self.broker.nav
+        self._forward_test_start_date = date.today()
+        self._prev_nav = self.broker.nav
         self.persistence.save_state("initial_capital", str(self.broker.initial_capital))
 
         self._thread = threading.Thread(
@@ -655,6 +680,16 @@ class PaperTradingDaemon:
         """Main daemon loop."""
         logger.info("Daemon loop started — polling every %d min", self.rebalance_interval)
 
+        # Initialize the strategy engine with historical data on first run
+        if not self.engine.is_initialized:
+            try:
+                self._initialize_engine()
+            except Exception as e:
+                logger.error("Engine initialization failed: %s", e, exc_info=True)
+                self._last_error = f"Engine init failed: {e}"
+                # Fall back to equal-weight mode (engine will return None,
+                # and _compute_target_weights handles that gracefully)
+
         while not self._stop_event.is_set():
             try:
                 if self.is_market_open():
@@ -665,6 +700,9 @@ class PaperTradingDaemon:
                     # Save end-of-day snapshot if transitioning to closed
                     if self._last_signal_time:
                         self._save_nav_snapshot()
+                        self._record_daily_return()
+                        # Check if model retraining is due (at market close)
+                        self.engine.retrain_if_due()
 
                 # Sleep until next check
                 self._stop_event.wait(timeout=self.rebalance_interval * 60)
@@ -713,26 +751,80 @@ class PaperTradingDaemon:
             self.broker.nav, self.broker.total_pnl, self.broker.total_pnl_pct,
         )
 
+    def _initialize_engine(self):
+        """
+        Fetch 2 years of historical data and train models.
+        Called once at daemon startup.
+        """
+        logger.info("Fetching 2-year historical data for engine initialization...")
+
+        historical = self.feed.fetch_historical(period="2y")
+        if not historical:
+            logger.warning("No historical data available — engine stays uninitialized")
+            return
+
+        prices = {}
+        volumes = {}
+        for sym, df in historical.items():
+            if 'Close' in df.columns:
+                prices[sym] = df['Close'].squeeze()
+            if 'Volume' in df.columns:
+                volumes[sym] = df['Volume'].squeeze()
+
+        if not prices:
+            logger.warning("No close prices extracted — engine stays uninitialized")
+            return
+
+        self.engine.initialize(prices=prices, volumes=volumes)
+        logger.info(
+            "Engine initialized — regime=%s, %d symbols",
+            self.engine.current_regime, len(prices),
+        )
+
     def _compute_target_weights(self) -> Optional[dict[str, float]]:
         """
-        Compute target portfolio weights using the same strategy engine
-        as the backtester.
+        Compute target portfolio weights using the full multi-strategy
+        signal engine.
 
-        Returns {symbol: target_weight} or None if computation fails.
-
-        Note: This is a simplified version that uses equal-weight as the
-        default.  The full strategy engine integration (running each
-        sub-strategy on live data) will be phased in — see implementation plan.
+        Falls back to equal-weight if the engine is not initialized or
+        if signal computation fails.
         """
-        # For initial deployment: equal-weight across all symbols
-        # TODO: Phase 2 — integrate full sub-strategy signal generation
         n = len(self.symbols)
         if n == 0:
             return None
 
-        # Equal weight as conservative starting point
+        # Try the full strategy engine first
+        if self.engine.is_initialized:
+            try:
+                prices = self.feed.fetch_current_prices()
+                target = self.engine.compute_targets(
+                    current_prices=prices,
+                )
+                if target is not None and target.weights:
+                    self._last_target = target
+                    self._current_regime = target.regime
+                    self._hedge_ratio = target.hedge_ratio
+                    logger.info(
+                        "Engine produced %d weights, regime=%s, hedge=%.0f%%",
+                        len(target.weights), target.regime,
+                        target.hedge_ratio * 100,
+                    )
+                    return target.weights
+            except Exception as e:
+                logger.warning("Engine signal failed, falling back to equal-weight: %s", e)
+                self._last_error = f"Engine signal failed: {e}"
+
+        # Fallback: equal weight
         weights = {sym: 1.0 / n for sym in self.symbols}
         return weights
+
+    def _record_daily_return(self):
+        """Record daily return for forward-test Sharpe computation."""
+        current_nav = self.broker.nav
+        if self._prev_nav and self._prev_nav > 0:
+            daily_ret = (current_nav - self._prev_nav) / self._prev_nav
+            self._daily_returns.append(daily_ret)
+        self._prev_nav = current_nav
 
     def _rebalance_to_targets(
         self, target_weights: dict[str, float], prices: dict[str, float],
@@ -829,6 +921,83 @@ class PaperTradingDaemon:
             n_trades_today=len(today_trades),
             market_status=self.get_market_status(),
         )
+
+    def get_validation_metrics(self) -> dict:
+        """Forward-test validation: compare live performance vs backtest expectations."""
+        rets = self._daily_returns
+        n_days = len(rets)
+
+        # Compute forward Sharpe ratio
+        if n_days >= 5:
+            arr = np.array(rets)
+            mean_r = np.mean(arr)
+            std_r = np.std(arr, ddof=1) if n_days > 1 else 1e-8
+            forward_sharpe = (mean_r / max(std_r, 1e-8)) * np.sqrt(252)
+            ann_return = mean_r * 252
+            ann_vol = std_r * np.sqrt(252)
+        else:
+            forward_sharpe = 0.0
+            ann_return = 0.0
+            ann_vol = 0.0
+
+        # Model info
+        model_info = self.engine.model_info if self.engine else {}
+
+        # Strategy weights from last target
+        strategy_weights = {}
+        active_strategies = []
+        if self._last_target:
+            strategy_weights = self._last_target.allocation_weights
+            active_strategies = [s.name for s in self._last_target.strategy_signals]
+
+        return {
+            "days_running": n_days,
+            "forward_sharpe": round(forward_sharpe, 4),
+            "backtest_sharpe": 1.12,  # From honest 12-year backtest
+            "annualized_return": round(ann_return * 100, 2),
+            "annualized_vol": round(ann_vol * 100, 2),
+            "tracking_error": None,  # TODO: requires live benchmark comparison
+            "current_regime": self._current_regime,
+            "model_info": model_info,
+            "active_strategies": active_strategies,
+            "strategy_weights": strategy_weights,
+            "total_daily_returns": n_days,
+        }
+
+    def get_strategy_weights(self) -> dict:
+        """Get current per-strategy allocation weights."""
+        if not self._last_target:
+            return {"weights": {}, "strategy_signals": []}
+
+        signals = []
+        for s in self._last_target.strategy_signals:
+            signals.append({
+                "name": s.name,
+                "n_positions": len(s.weights),
+                "top_holdings": dict(
+                    sorted(s.weights.items(), key=lambda x: x[1], reverse=True)[:5]
+                ),
+                "last_computed": s.last_computed,
+            })
+
+        return {
+            "allocation_weights": self._last_target.allocation_weights,
+            "regime": self._last_target.regime,
+            "hedge_ratio": self._last_target.hedge_ratio,
+            "strategy_signals": signals,
+            "computed_at": self._last_target.computed_at,
+        }
+
+    def force_retrain(self) -> dict:
+        """Force model retraining (triggered via API)."""
+        if not self.engine.is_initialized:
+            return {"status": "error", "message": "Engine not initialized"}
+
+        retrained = self.engine.retrain_if_due()
+        return {
+            "status": "retrained" if retrained else "not_due",
+            "model_info": self.engine.model_info,
+        }
 
     def get_portfolio(self) -> dict:
         """Get portfolio and recent trades for API responses."""

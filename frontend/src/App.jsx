@@ -23,9 +23,17 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
-// Main Layout with Top Bar and Sidebar (Dashboard Shell)
 const Shell = ({ children }) => {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [desktopOpen, setDesktopOpen] = useState(true);
+
+  const handleMenuClick = () => {
+    if (window.innerWidth < 768) {
+      setMobileOpen(!mobileOpen);
+    } else {
+      setDesktopOpen(!desktopOpen);
+    }
+  };
 
   return (
     <div className="h-screen bg-background text-on-background font-body selection:bg-primary selection:text-on-primary transition-colors duration-300 flex flex-col overflow-hidden">
@@ -34,11 +42,11 @@ const Shell = ({ children }) => {
       </a>
 
       {/* Extracted TopBar */}
-      <TopBar onMenuClick={() => setSidebarOpen(true)} />
+      <TopBar onMenuClick={handleMenuClick} mobileOpen={mobileOpen} desktopOpen={desktopOpen} />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Extracted Sidebar */}
-        <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
+        <Sidebar mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} desktopOpen={desktopOpen} />
 
         {/* Main Content */}
         <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden relative bg-background transition-colors duration-300">

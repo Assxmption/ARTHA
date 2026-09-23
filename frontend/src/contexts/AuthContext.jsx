@@ -1,36 +1,79 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase'
 
-const AuthContext = createContext();
+const AuthContext = createContext({})
 
-export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+export const useAuth = () => useContext(AuthContext)
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null)
+  const [session, setSession] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Check local storage for existing session
-    const storedUser = localStorage.getItem('artha_user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setLoading(false);
-  }, []);
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      setUser(session?.user ?? null)
+      setLoading(false)
+    })
 
-  const login = (email) => {
-    const newUser = { email, token: 'mock-jwt-token' };
-    setUser(newUser);
-    localStorage.setItem('artha_user', JSON.stringify(newUser));
-  };
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+      setUser(session?.user ?? null)
+      setLoading(false)
+    })
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('artha_user');
-  };
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const signUp = async (email, password) => {
+    return supabase.auth.signUp({
+      email,
+      password,
+    })
+  }
+
+  const signIn = async (email, password) => {
+    return supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+  }
+
+  const signOut = async () => {
+    return supabase.auth.signOut()
+  }
+  
+  const resetPassword = async (email) => {
+    return supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + '/reset-password',
+    })
+  }
+  
+  const verifyOtp = async (email, token, type = 'signup') => {
+    return supabase.auth.verifyOtp({
+      email,
+      token,
+      type,
+    })
+  }
+
+  const value = {
+    signUp,
+    signIn,
+    signOut,
+    resetPassword,
+    verifyOtp,
+    user,
+    session,
+    loading
+  }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
-      {children}
+    <AuthContext.Provider value={value}>
+      {!loading && children}
     </AuthContext.Provider>
-  );
+  )
 }
-
-export const useAuth = () => useContext(AuthContext);

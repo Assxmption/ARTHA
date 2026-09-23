@@ -60,6 +60,7 @@ class ModelCheckpoint:
     last_regime_train: Optional[str] = None
     last_ml_train: Optional[str] = None
     allocation_weights: dict[str, float] = field(default_factory=dict)
+    current_regime: str = "UNKNOWN"
 
 
 # ── The Engine ──────────────────────────────────────────────────────────────────
@@ -755,6 +756,7 @@ class LiveStrategyEngine:
                     if self._last_ml_train else None
                 ),
                 allocation_weights=self._allocation_weights,
+                current_regime=self._current_regime,
             )
             with open(checkpoint_path, 'wb') as f:
                 pickle.dump(checkpoint, f)
@@ -776,6 +778,7 @@ class LiveStrategyEngine:
             self._ml_model = checkpoint.ml_model
             self._ml_feature_importance = checkpoint.ml_feature_importance
             self._allocation_weights = checkpoint.allocation_weights
+            self._current_regime = getattr(checkpoint, 'current_regime', 'UNKNOWN')
 
             if checkpoint.last_regime_train:
                 self._last_regime_train = date.fromisoformat(

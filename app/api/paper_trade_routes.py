@@ -12,10 +12,11 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from app.quant.paper_trade import PaperTradingDaemon, DaemonState
+from app.security.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ class ResetRequest(BaseModel):
 # ── Routes ──────────────────────────────────────────────────────────────────────
 
 @router.post("/start")
-async def start_daemon(request: StartRequest):
+async def start_daemon(request: StartRequest, user=Depends(get_current_user)):
     """Start the paper trading daemon."""
     global _daemon
 
@@ -78,7 +79,7 @@ async def start_daemon(request: StartRequest):
 
 
 @router.post("/stop")
-async def stop_daemon():
+async def stop_daemon(user=Depends(get_current_user)):
     """Stop the paper trading daemon."""
     global _daemon
 
@@ -90,7 +91,7 @@ async def stop_daemon():
 
 
 @router.get("/status")
-async def get_status():
+async def get_status(user=Depends(get_current_user)):
     """Get current daemon status, NAV, PnL, regime."""
     if not _daemon:
         return {
@@ -120,7 +121,7 @@ async def get_status():
 
 
 @router.get("/portfolio")
-async def get_portfolio():
+async def get_portfolio(user=Depends(get_current_user)):
     """Get current positions and cash balance."""
     if not _daemon:
         raise HTTPException(404, "Daemon not initialized")
@@ -129,7 +130,7 @@ async def get_portfolio():
 
 
 @router.get("/trades")
-async def get_trades(limit: int = 50, offset: int = 0):
+async def get_trades(limit: int = 50, offset: int = 0, user=Depends(get_current_user)):
     """Get trade history (most recent first)."""
     if not _daemon:
         raise HTTPException(404, "Daemon not initialized")
@@ -139,7 +140,7 @@ async def get_trades(limit: int = 50, offset: int = 0):
 
 
 @router.get("/nav-history")
-async def get_nav_history(limit: int = 365):
+async def get_nav_history(limit: int = 365, user=Depends(get_current_user)):
     """Get NAV time series for charting."""
     if not _daemon:
         raise HTTPException(404, "Daemon not initialized")
@@ -149,7 +150,7 @@ async def get_nav_history(limit: int = 365):
 
 
 @router.post("/reset")
-async def reset_daemon(request: ResetRequest):
+async def reset_daemon(request: ResetRequest, user=Depends(get_current_user)):
     """
     Reset virtual capital and clear all history.
 
@@ -170,3 +171,67 @@ async def reset_daemon(request: ResetRequest):
         "status": "reset",
         "new_capital": request.new_capital or _daemon.broker.initial_capital,
     }
+
+
+@router.get("/validation")
+async def get_validation(user=Depends(get_current_user)):
+    """
+    Forward-test validation: compare live performance against backtest expectations.
+
+    Returns forward Sharpe ratio, annualized return/vol, model info,
+    and active strategy breakdown.
+    """
+    if not _daemon:
+        raise HTTPException(404, "Daemon not initialized")
+
+    return _daemon.get_validation_metrics()
+
+
+@router.get("/regime")
+async def get_regime(user=Depends(get_current_user)):
+    """Get current market regime and regime history from NAV snapshots."""
+    if not _daemon:
+        raise HTTPException(404, "Daemon not initialized")
+
+    nav_history = _daemon.get_nav_history(limit=365)
+    regime_history = [
+        {"date": h["date"], "regime": h.get("regime", "UNKNOWN")}
+        for h in nav_history
+        if h.get("regime")
+    ]
+
+    return {
+        "current_regime": _daemon._current_regime,
+        "hedge_ratio": _daemon._hedge_ratio,
+        "regime_history": regime_history,
+    }
+
+
+@router.post("/retrain")
+async def force_retrain(user=Depends(get_current_user)):
+    """
+    Force ML alpha and regime model retraining.
+
+    Models are normally retrained on schedule (ML monthly, HMM quarterly).
+    Use this endpoint to trigger immediate retraining, e.g., after a
+    regime transition.
+    """
+    if not _daemon:
+        raise HTTPException(404, "Daemon not initialized")
+
+    return _daemon.force_retrain()
+
+
+@router.get("/strategy-weights")
+async def get_strategy_weights(user=Depends(get_current_user)):
+    """
+    Get current per-strategy allocation weights and signal details.
+
+    Shows how capital is distributed across sub-strategies and which
+    stocks each strategy is currently signaling.
+    """
+    if not _daemon:
+        raise HTTPException(404, "Daemon not initialized")
+
+    return _daemon.get_strategy_weights()
+

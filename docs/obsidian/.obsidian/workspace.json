@@ -183,8 +183,9 @@
   },
   "active": "0ee957cc9480934b",
   "lastOpenFiles": [
-    "Quant_Simulator.md",
     "ARTHA_Proof_Of_Concept.md",
+    "Fact_Schemas.md",
+    "Quant_Simulator.md",
     "Data_VIX.md",
     "Data_Ingestion_MCX.md",
     "Options_Backtester.md",
@@ -203,7 +204,6 @@
     "Data_News.md",
     "Data_Fundamentals.md",
     "Data_NSE.md",
-    "Fact_Schemas.md",
     "Alpha_Loop.md",
     "Writer_Agent.md",
     "Walk_Forward_Backtester.md",

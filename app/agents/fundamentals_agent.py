@@ -565,32 +565,60 @@ def stream_fundamentals_narrative(
     )
 
     try:
-        llm = get_cheap_llm()
-        # crewai.LLM strips the provider prefix from llm.model
-        model_name = llm.model
-        if not "/" in model_name:
-            if "gemini" in model_name:
-                model_name = f"gemini/{model_name}"
-            elif "llama" in model_name:
-                model_name = f"groq/{model_name}"
+        from app.llm.router import _PROVIDER_CHAINS, ModelTier, _get_api_key, _groq_keys, mark_key_exhausted
         
-        response = completion(
-            model=model_name,
-            messages=[{"role": "user", "content": prompt}],
-            api_key=llm.api_key,
-            base_url=llm.base_url if hasattr(llm, "base_url") else None,
-            stream=True
-        )
-
+        chain = _PROVIDER_CHAINS.get(ModelTier.CHEAP, [])
+        response = None
         full_text = ""
-        for chunk in response:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                full_text += delta
-                yield delta
+        last_error = None
+        
+        for provider_config in chain:
+            provider = provider_config["provider"]
+            model = provider_config["model"]
+            
+            api_key = None
+            if provider == "groq":
+                api_key = _groq_keys.get_current_key()
+            else:
+                api_key = _get_api_key(provider)
+                
+            if not api_key:
+                continue
+                
+            model_name = f"{provider}/{model}" if "/" not in model else model
+            logger.info(f"Trying to stream narrative for {symbol} using {model_name}")
+            
+            try:
+                response = completion(
+                    model=model_name,
+                    messages=[{"role": "user", "content": prompt}],
+                    api_key=api_key,
+                    stream=True,
+                    timeout=60
+                )
+                
+                # If we get here, connection opened successfully
+                for chunk in response:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        full_text += delta
+                        yield delta
+                
+                # If we successfully streamed all chunks, break out of fallback loop
+                break
+                
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Streaming LLM failed for {model_name} on {symbol}: {e}")
+                if provider == "groq":
+                    mark_key_exhausted(api_key)
+                continue
+                
+        if not full_text:
+            raise Exception(f"All providers failed. Last error: {last_error}")
                 
     except Exception as e:
-        logger.error(f"Streaming LLM failed for {symbol}: {e}")
+        logger.error(f"Streaming narrative completely failed for {symbol}: {e}")
         yield "\n\n*Error generating narrative.*"
         return
 

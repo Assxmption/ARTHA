@@ -1,49 +1,68 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Sun, Moon, Search, Settings as SettingsIcon, User, Menu } from 'lucide-react';
+import { Sun, Moon, Search, Settings as SettingsIcon, User, Menu, X } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import GlobalSearch from './GlobalSearch';
 
-export default function TopBar({ onMenuClick }) {
+export default function TopBar({ onMenuClick, mobileOpen, desktopOpen }) {
   const { isDark, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [profileOpen, setProfileOpen] = useState(false);
+  
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const isMenuOpen = isMobile ? mobileOpen : desktopOpen;
 
   return (
-    <header className="h-14 border-b border-outline-variant bg-surface-container-low flex items-center justify-between px-4 md:px-6 sticky top-0 z-40 transition-colors duration-300">
-      <div className="flex items-center gap-4 md:gap-6 w-full md:w-auto">
-        {/* Mobile Menu Button */}
+    <header className="h-14 border-b border-outline-variant bg-surface-container-low flex items-center px-4 md:px-6 sticky top-0 z-40 transition-colors duration-300 gap-4 md:gap-6">
+      
+      {/* LEFT COMPONENT */}
+      <div className="flex items-center gap-4 md:gap-6 shrink-0">
+        {/* Menu Button with smooth transition */}
         <button 
           onClick={onMenuClick}
-          className="md:hidden text-on-surface hover:text-primary transition-colors focus:outline-none"
+          className="text-on-surface hover:text-primary transition-colors focus:outline-none relative w-6 h-6 flex items-center justify-center overflow-hidden"
+          aria-label="Toggle Menu"
         >
-          <Menu size={20} />
+          <div className={`absolute transition-all duration-300 ease-in-out ${isMenuOpen ? 'opacity-0 rotate-90 scale-50' : 'opacity-100 rotate-0 scale-100'}`}>
+            <Menu size={20} />
+          </div>
+          <div className={`absolute transition-all duration-300 ease-in-out ${isMenuOpen ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-90 scale-50'}`}>
+            <X size={20} />
+          </div>
         </button>
 
         <div className="hidden lg:flex items-center gap-2 w-32 shrink-0">
           <div className="w-2 h-2 rounded-full bg-secondary"></div>
           <span className="font-ui text-xs uppercase tracking-widest text-on-surface-variant whitespace-nowrap">Regime: Calm</span>
         </div>
+      </div>
 
-        {/* Premium Scrolling Ticker Tape (Hidden on Mobile for Space) */}
-        <div className="hidden md:flex flex-1 overflow-hidden h-full items-center border-l border-r border-outline-variant/30 mx-4 px-4 mask-image-fade" style={{ width: '400px' }}>
-          <div className="whitespace-nowrap animate-marquee flex gap-12 font-mono text-xs items-center">
-            <span className="text-on-surface-variant"><span className="text-secondary mr-1">▲</span>NIFTY 50 24,102.50 (+0.4%)</span>
-            <span className="text-on-surface-variant"><span className="text-secondary mr-1">▲</span>SENSEX 79,340.20 (+0.3%)</span>
-            <span className="text-on-surface-variant"><span className="text-error mr-1">▼</span>BANKNIFTY 51,200.15 (-0.1%)</span>
-            <span className="text-on-surface-variant border-l border-outline-variant/50 pl-4"><span className="text-primary font-bold">SIGNAL:</span> LONG RELIANCE / SHORT INFY (Z: -2.1)</span>
-            <span className="text-on-surface-variant border-l border-outline-variant/50 pl-4"><span className="text-primary font-bold">REGIME:</span> BULL VOLATILE</span>
-            {/* Duplicate for infinite loop */}
-            <span className="text-on-surface-variant"><span className="text-secondary mr-1">▲</span>NIFTY 50 24,102.50 (+0.4%)</span>
-            <span className="text-on-surface-variant"><span className="text-secondary mr-1">▲</span>SENSEX 79,340.20 (+0.3%)</span>
-            <span className="text-on-surface-variant"><span className="text-error mr-1">▼</span>BANKNIFTY 51,200.15 (-0.1%)</span>
-            <span className="text-on-surface-variant border-l border-outline-variant/50 pl-4"><span className="text-primary font-bold">SIGNAL:</span> LONG RELIANCE / SHORT INFY (Z: -2.1)</span>
-          </div>
+      {/* MIDDLE COMPONENT (TICKER) */}
+      <div className="hidden md:flex flex-1 overflow-hidden h-full items-center border-l border-r border-outline-variant/30 px-4 mask-image-fade">
+        <div className="whitespace-nowrap animate-marquee flex gap-12 font-mono text-xs items-center">
+          <span className="text-on-surface-variant"><span className="text-secondary mr-1">▲</span>NIFTY 50 24,102.50 (+0.4%)</span>
+          <span className="text-on-surface-variant"><span className="text-secondary mr-1">▲</span>SENSEX 79,340.20 (+0.3%)</span>
+          <span className="text-on-surface-variant"><span className="text-error mr-1">▼</span>BANKNIFTY 51,200.15 (-0.1%)</span>
+          <span className="text-on-surface-variant border-l border-outline-variant/50 pl-4"><span className="text-primary font-bold">SIGNAL:</span> LONG RELIANCE / SHORT INFY (Z: -2.1)</span>
+          <span className="text-on-surface-variant border-l border-outline-variant/50 pl-4"><span className="text-primary font-bold">REGIME:</span> BULL VOLATILE</span>
+          {/* Duplicate for infinite loop */}
+          <span className="text-on-surface-variant"><span className="text-secondary mr-1">▲</span>NIFTY 50 24,102.50 (+0.4%)</span>
+          <span className="text-on-surface-variant"><span className="text-secondary mr-1">▲</span>SENSEX 79,340.20 (+0.3%)</span>
+          <span className="text-on-surface-variant"><span className="text-error mr-1">▼</span>BANKNIFTY 51,200.15 (-0.1%)</span>
+          <span className="text-on-surface-variant border-l border-outline-variant/50 pl-4"><span className="text-primary font-bold">SIGNAL:</span> LONG RELIANCE / SHORT INFY (Z: -2.1)</span>
         </div>
       </div>
 
+      {/* RIGHT COMPONENT */}
       <div className="flex items-center gap-4 md:gap-6 shrink-0 ml-auto">
         
         <GlobalSearch />

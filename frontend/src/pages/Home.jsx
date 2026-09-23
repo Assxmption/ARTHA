@@ -224,7 +224,7 @@ export default function Home() {
             >
               <Newspaper size={16} className="text-primary" />
               <div>
-                <span className="font-ui text-xs text-on-surface group-hover:text-primary transition-colors block">News & Sentiment</span>
+                <span className="font-ui text-xs text-on-surface group-hover:text-primary transition-colors block">Sentiment</span>
                 <span className="font-mono text-[10px] text-outline">VADER-scored market news</span>
               </div>
             </button>

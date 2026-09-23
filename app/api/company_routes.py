@@ -362,6 +362,11 @@ async def search_symbols(q: str):
 
 # ── Multi-company batch endpoint ───────────────────────────────────────────────
 
+from cachetools import TTLCache
+import time
+
+WATCHLIST_CACHE = TTLCache(maxsize=500, ttl=15)
+
 @router.get("/api/watchlist")
 def get_watchlist(
     symbols: str = "RELIANCE,TCS,HDFCBANK,INFY,ICICIBANK,SBIN,BHARTIARTL",
@@ -377,8 +382,13 @@ def get_watchlist(
     sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()][:15]
     
     def fetch_symbol(sym):
+        if sym in WATCHLIST_CACHE:
+            return WATCHLIST_CACHE[sym]
+        
         try:
-            ticker = yf.Ticker(f"{sym}.NS")
+            # Use symbol as-is if it starts with ^ (indices) or already has an extension
+            yf_sym = sym if sym.startswith("^") or "." in sym else f"{sym}.NS"
+            ticker = yf.Ticker(yf_sym)
             hist = ticker.history(period="5d").dropna(subset=["Close"])
             
             if len(hist) >= 2:
@@ -415,7 +425,7 @@ def get_watchlist(
                 except Exception:
                     pass
 
-            return {
+            result = {
                 "symbol": sym,
                 "name": info.get("longName") or info.get("shortName") or sym,
                 "price": price,
@@ -427,6 +437,8 @@ def get_watchlist(
                 "pe": round(info.get("trailingPE"), 2) if info.get("trailingPE") else None,
                 "sector": info.get("sector") or "Unknown"
             }
+            WATCHLIST_CACHE[sym] = result
+            return result
         except Exception as e:
             logger.warning("Watchlist fetch failed for %s: %s", sym, e)
             return {"symbol": sym, "error": str(e)}
