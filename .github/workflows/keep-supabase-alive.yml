@@ -13,4 +13,4 @@ jobs:
       - name: Ping Supabase API
         run: |
           echo "Pinging Supabase to prevent sleep..."
-          curl -s -I "https://etajspdgktfyrrwywlkm.supabase.co/rest/v1/"
+          curl -s -I -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" "https://etajspdgktfyrrwywlkm.supabase.co/rest/v1/"
