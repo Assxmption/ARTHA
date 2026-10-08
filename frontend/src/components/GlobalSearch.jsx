@@ -9,24 +9,24 @@ export default function GlobalSearch() {
   const navigate = useNavigate();
   const wrapperRef = useRef(null);
 
-  // Mock list of symbols for autocomplete
-  const popularSymbols = [
-    'RELIANCE', 'HDFCBANK', 'TCS', 'INFY', 'ITC', 
-    'SBI', 'BHARTIARTL', 'KOTAKBANK', 'ICICIBANK',
-    'L&T', 'BAJFINANCE', 'AXISBANK', 'ASIANPAINT',
-    'MARUTI', 'HCLTECH', 'SUNPHARMA', 'TATASTEEL',
-    'GOLD', 'SILVER', 'CRUDEOIL', 'COPPER', 'NATURALGAS'
-  ];
-
   useEffect(() => {
-    if (search.trim()) {
-      const filtered = popularSymbols.filter(sym => 
-        sym.toLowerCase().includes(search.toLowerCase())
-      );
-      setResults(filtered.slice(0, 5)); // show top 5
-    } else {
-      setResults([]);
-    }
+    const fetchResults = async () => {
+      if (search.trim().length >= 1) {
+        try {
+          const res = await fetch(`/api/search?q=${search.trim()}`);
+          const data = await res.json();
+          setResults(data.results || []);
+        } catch (e) {
+          console.error("Search fetch failed", e);
+        }
+      } else {
+        setResults([]);
+      }
+    };
+    
+    // Simple debounce
+    const timeoutId = setTimeout(fetchResults, 150);
+    return () => clearTimeout(timeoutId);
   }, [search]);
 
   // Click outside listener
@@ -71,23 +71,40 @@ export default function GlobalSearch() {
 
       {/* Autocomplete Dropdown */}
       {isFocused && search.trim() && results.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-surface border border-outline-variant shadow-lg z-50">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-surface border border-outline-variant shadow-lg z-50 max-h-64 overflow-y-auto">
           <ul className="py-1">
-            {results.map((sym) => (
-              <li key={sym}>
-                <button
-                  onMouseDown={(e) => { e.preventDefault(); handleSelect(sym); }}
-                  className="w-full text-left px-4 py-2 font-mono text-xs hover:bg-surface-container transition-colors focus:bg-surface-container focus:outline-none flex justify-between items-center"
-                >
-                  <span className="text-on-surface">
-                    {sym.substring(0, sym.toLowerCase().indexOf(search.toLowerCase()))}
-                    <span className="text-primary font-bold">{sym.substring(sym.toLowerCase().indexOf(search.toLowerCase()), sym.toLowerCase().indexOf(search.toLowerCase()) + search.length)}</span>
-                    {sym.substring(sym.toLowerCase().indexOf(search.toLowerCase()) + search.length)}
-                  </span>
-                  <span className="text-[9px] text-outline-variant uppercase font-ui tracking-widest">NSE</span>
-                </button>
-              </li>
-            ))}
+            {results.map((item) => {
+              const sym = item.symbol;
+              const name = item.name;
+              
+              // Highlight matching part of symbol
+              const matchIndex = sym.toLowerCase().indexOf(search.toLowerCase());
+              
+              return (
+                <li key={sym}>
+                  <button
+                    onMouseDown={(e) => { e.preventDefault(); handleSelect(sym); }}
+                    className="w-full text-left px-4 py-2 hover:bg-surface-container transition-colors focus:bg-surface-container focus:outline-none flex justify-between items-center"
+                  >
+                    <div className="flex flex-col">
+                      <span className="font-mono text-sm text-on-surface">
+                        {matchIndex >= 0 ? (
+                          <>
+                            {sym.substring(0, matchIndex)}
+                            <span className="text-primary font-bold">{sym.substring(matchIndex, matchIndex + search.length)}</span>
+                            {sym.substring(matchIndex + search.length)}
+                          </>
+                        ) : (
+                          sym
+                        )}
+                      </span>
+                      <span className="font-ui text-[10px] text-on-surface-variant truncate max-w-[150px]">{name}</span>
+                    </div>
+                    <span className="text-[9px] text-outline-variant uppercase font-ui tracking-widest">{item.exchange}</span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

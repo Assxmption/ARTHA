@@ -32,6 +32,7 @@ class FactType(str, Enum):
 
     FUNDAMENTAL = "fundamental"
     QUANT_SIGNAL = "quant_signal"
+    OPTIONS_SIGNAL = "options_signal"  # New: options strategy signals
     RISK_FLAG = "risk_flag"
     NEWS_SIGNAL = "news_signal"
     NARRATIVE = "narrative"
@@ -58,6 +59,13 @@ class SignalType(str, Enum):
     TERM_STRUCTURE = "term_structure"
     FACTOR = "factor"
     COMPOSITE = "composite"
+    # Options-specific signal types
+    VRP = "vrp"                        # Volatility risk premium
+    IV_PERCENTILE = "iv_percentile"    # IV percentile rank
+    PCR = "pcr"                        # Put-call ratio
+    IV_SKEW = "iv_skew"               # IV skew
+    OPTIONS_STRATEGY = "options_strategy"  # Strategy recommendation
+    GAMMA_EXPOSURE = "gamma_exposure"  # Market-wide GEX
 
 
 class EventType(str, Enum):
@@ -282,3 +290,90 @@ class ReportCitation(BaseFact):
         False,
         description="True if the referenced fact was found and its source is non-empty.",
     )
+
+
+class OptionsSignal(BaseFact):
+    """
+    A signal from the options strategy selector / options engine.
+
+    Captures the full state of a recommended options strategy: legs,
+    Greeks, P&L bounds, margin, and the regime/VIX context that
+    triggered the recommendation.
+
+    Like QuantSignal, `validated` defaults to False and may ONLY be set
+    True after the strategy clears the walk-forward options backtest gate
+    (AGENTS.md rule 6).
+    """
+
+    fact_type: FactType = FactType.OPTIONS_SIGNAL
+
+    symbol_or_index: str = Field(
+        ...,
+        description="NSE symbol or index name, e.g. 'RELIANCE' or 'NIFTY'.",
+    )
+    strategy_type: str = Field(
+        ...,
+        description=(
+            "Strategy type, e.g. 'IRON_CONDOR', 'COVERED_CALL'. "
+            "Values from app.quant.options_strategies.StrategyType."
+        ),
+    )
+    legs: list[dict] = Field(
+        default_factory=list,
+        description=(
+            "List of option legs. Each dict: "
+            "{'type': 'SHORT_PUT', 'strike': 22800, 'expiry_days': 30, "
+            "'quantity': 1, 'premium': 45.5, 'iv': 0.18}"
+        ),
+    )
+    net_premium: float = Field(
+        ...,
+        description="Net credit (positive) or debit (negative) per lot.",
+    )
+    max_profit: float = Field(..., description="Maximum profit per lot in INR.")
+    max_loss: float = Field(..., description="Maximum loss per lot in INR (positive = loss).")
+    breakevens: list[float] = Field(
+        default_factory=list,
+        description="Breakeven price(s) at expiry.",
+    )
+    portfolio_delta: float = Field(
+        0.0, description="Aggregate delta of the strategy."
+    )
+    portfolio_gamma: float = Field(
+        0.0, description="Aggregate gamma of the strategy."
+    )
+    portfolio_theta: float = Field(
+        0.0, description="Aggregate theta (per day) of the strategy."
+    )
+    portfolio_vega: float = Field(
+        0.0, description="Aggregate vega (per 1% IV) of the strategy."
+    )
+    margin_required: float = Field(
+        0.0, description="Approximate SPAN margin required in INR."
+    )
+    regime_label: str = Field(
+        ..., description="Regime at time of recommendation: BULL/BEAR/SIDEWAYS."
+    )
+    vix_level: float = Field(
+        0.0, description="India VIX level at time of recommendation."
+    )
+    vix_regime: str = Field(
+        "MEDIUM", description="VIX regime: LOW/MEDIUM/HIGH."
+    )
+    vrp_signal: float = Field(
+        0.0, description="VRP at time of recommendation: (IV-RV)/RV."
+    )
+    strategy_role: str = Field(
+        "PRIMARY", description="Role: PRIMARY/SECONDARY/HEDGE/DEFENSE."
+    )
+    confidence: float = Field(
+        0.5, description="Strategy selector confidence [0, 1]."
+    )
+    validated: bool = Field(
+        False,
+        description=(
+            "ONLY True if the strategy cleared the walk-forward out-of-sample "
+            "gate in app/quant/options_backtest.py. Never set by an LLM."
+        ),
+    )
+    as_of: date = Field(..., description="Date the signal was computed for.")

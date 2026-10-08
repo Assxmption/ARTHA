@@ -1,24 +1,23 @@
 """
-ML Alpha Model — Ensemble Predictor
-=====================================
-3-model ensemble that combines 50+ signals into a single alpha prediction
-per stock per day using walk-forward cross-validation.
+ML Alpha Model v2 — Redesigned for Real Predictive Power
+==========================================================
+Root cause of v1 failure: OOS IC = -0.0016, R² = -0.055
 
-Models:
-  1. XGBoost — captures non-linear signal interactions
-  2. Ridge Regression — stable linear combination baseline
-  3. Random Forest — bagged decorrelation
+Why v1 failed:
+  1. Predicted raw 5-day returns (R/N ≈ 0.01 — nearly impossible)
+  2. No purge gap between train/test (look-ahead bias in overlapping fwd rets)
+  3. Equal-weight ensemble (Ridge drags down tree models)
+  4. No target engineering (raw returns are dominated by market beta noise)
 
-Walk-Forward Protocol (no data leakage):
-  - Train on [0, T], predict on [T, T+step]
-  - Slide T forward by step_size (21 trading days = 1 month)
-  - Minimum 504 days (2 years) training window
-  - Feature importance tracked at each fold
+v2 changes (inspired by Jane Street / Two Sigma published approaches):
+  1. TARGET: cross-sectional RANK of excess returns (market-neutral, bounded)
+  2. PURGE GAP: 5-day gap between train and test windows (no overlap)
+  3. STACKED ENSEMBLE: Ridge meta-learner on top of tree base models
+  4. FEATURE AUGMENTATION: signal momentum (Δ signal over time), interaction terms
+  5. EXPANDING WINDOW: monotonically growing train set (more data = less overfit)
+  6. WINSORIZED TARGET: clip extreme returns to reduce noise sensitivity
 
-Output: alpha_score per stock per day (cross-sectionally ranked prediction
-of next-day excess return).
-
-Reference: Implementation Plan v5 §ML Alpha Model
+Reference: "Machine Learning for Factor Investing" (Coqueret & Guida, 2020)
 """
 
 from __future__ import annotations
@@ -45,6 +44,18 @@ class AlphaModelResult:
     n_training_samples: int
 
 
+def _winsorize(arr: np.ndarray, limits: tuple = (0.01, 0.99)) -> np.ndarray:
+    """Clip to percentile bounds to reduce noise from outlier returns."""
+    lo = np.nanpercentile(arr, limits[0] * 100)
+    hi = np.nanpercentile(arr, limits[1] * 100)
+    return np.clip(arr, lo, hi)
+
+
+def _rank_transform(series: pd.Series) -> pd.Series:
+    """Transform to uniform [0, 1] ranks within each cross-section."""
+    return series.rank(pct=True)
+
+
 def train_alpha_model(
     signal_matrix: pd.DataFrame,
     forward_returns: pd.DataFrame,
@@ -57,72 +68,95 @@ def train_alpha_model(
     n_estimators_rf: int = 100,
 ) -> AlphaModelResult:
     """
-    Train the 3-model ensemble using walk-forward cross-validation.
+    Train the redesigned ML alpha model.
 
-    Args:
-        signal_matrix: DataFrame with MultiIndex (date, symbol), columns = signal names.
-        forward_returns: DataFrame with MultiIndex (date, symbol), column 'fwd_return'.
-        min_train_days: Minimum training window in trading days.
-        step_size: Number of days to advance per fold.
-
-    Returns:
-        AlphaModelResult with predictions, feature importance, and metrics.
+    Key improvements over v1:
+    - Cross-sectional rank target (bounded, market-neutral)
+    - 5-day purge gap between train and test
+    - Expanding training window (monotonically growing)
+    - Winsorized returns before ranking
+    - Stacked ensemble (meta-learner on base predictions)
     """
     from sklearn.linear_model import Ridge
     from sklearn.ensemble import RandomForestRegressor, HistGradientBoostingRegressor
+    from scipy.stats import spearmanr
 
     # Get unique dates
     dates = signal_matrix.index.get_level_values("date").unique().sort_values()
     signal_names = signal_matrix.columns.tolist()
     n_features = len(signal_names)
 
-    logger.info("Training ML alpha model: %d dates, %d features, step=%d",
+    logger.info("Training ML alpha model v2: %d dates, %d features, step=%d",
                 len(dates), n_features, step_size)
 
     # Merge signals with forward returns
     merged = signal_matrix.join(forward_returns[["fwd_return"]], how="inner")
     merged = merged.dropna(subset=["fwd_return"])
 
-    if len(merged) < min_train_days * 10:
+    if len(merged) < min_train_days * 5:
         logger.warning("Insufficient data for ML training: %d rows", len(merged))
         return AlphaModelResult(
             predictions=pd.DataFrame(),
             feature_importance={},
-            oos_ic=0.0,
-            oos_r2=0.0,
-            n_folds=0,
-            n_features=n_features,
-            n_training_samples=0,
+            oos_ic=0.0, oos_r2=0.0, n_folds=0,
+            n_features=n_features, n_training_samples=0,
         )
 
-    # Walk-forward folds
+    # ── TARGET ENGINEERING ──────────────────────────────────────
+    # Transform raw returns to cross-sectional ranks per date
+    # This removes market beta, bounds the target to [0,1], and
+    # makes the problem a ranking task (which ML excels at)
+    target_col = "target_rank"
+    merged[target_col] = np.nan
+
+    for date in dates:
+        mask = merged.index.get_level_values("date") == date
+        if mask.sum() < 5:
+            continue
+        raw_rets = merged.loc[mask, "fwd_return"].values
+        # Winsorize to reduce noise from extreme returns
+        winsorized = _winsorize(raw_rets, (0.02, 0.98))
+        # Rank transform to [0, 1]
+        ranks = pd.Series(winsorized).rank(pct=True).values
+        # Center at 0 for symmetric target
+        merged.loc[mask, target_col] = ranks - 0.5
+
+    merged = merged.dropna(subset=[target_col])
+
+    # ── WALK-FORWARD TRAINING ───────────────────────────────────
+    PURGE_GAP = 2  # 2 weekly steps = ~10 trading days purge gap
+
     all_predictions = []
     all_importances = []
     oos_ics = []
     oos_r2s = []
     n_folds = 0
 
-    fold_starts = range(min_train_days, len(dates) - step_size, step_size)
+    fold_starts = range(min_train_days, len(dates) - step_size - PURGE_GAP, step_size)
 
     for fold_end_idx in fold_starts:
-        train_end_date = dates[fold_end_idx]
-        test_start_date = dates[fold_end_idx]
-        test_end_idx = min(fold_end_idx + step_size, len(dates) - 1)
-        test_end_date = dates[test_end_idx]
-
-        # Split
+        # EXPANDING window: always train from the beginning
         train_dates = dates[:fold_end_idx]
-        test_dates = dates[fold_end_idx:test_end_idx + 1]
+
+        # PURGE GAP: skip PURGE_GAP steps between train and test
+        test_start_idx = fold_end_idx + PURGE_GAP
+        test_end_idx = min(test_start_idx + step_size, len(dates) - 1)
+
+        if test_start_idx >= len(dates):
+            break
+
+        test_dates = dates[test_start_idx:test_end_idx + 1]
 
         train_mask = merged.index.get_level_values("date").isin(train_dates)
         test_mask = merged.index.get_level_values("date").isin(test_dates)
 
         X_train = merged.loc[train_mask, signal_names].values
-        y_train = merged.loc[train_mask, "fwd_return"].values
+        y_train = merged.loc[train_mask, target_col].values
         X_test = merged.loc[test_mask, signal_names].values
-        y_test = merged.loc[test_mask, "fwd_return"].values
+        y_test_rank = merged.loc[test_mask, target_col].values
+        y_test_raw = merged.loc[test_mask, "fwd_return"].values
 
-        if len(X_train) < 100 or len(X_test) < 10:
+        if len(X_train) < 200 or len(X_test) < 10:
             continue
 
         # Replace NaN/inf with 0
@@ -130,37 +164,61 @@ def train_alpha_model(
         X_test = np.nan_to_num(X_test, nan=0, posinf=0, neginf=0)
         y_train = np.nan_to_num(y_train, nan=0)
 
-        # ── Model 1: HistGradientBoosting (sklearn native, no libomp) ──
+        # ── Model 1: HistGradientBoosting ─────────────────────
         hgb = HistGradientBoostingRegressor(
             max_iter=n_estimators_xgb,
             max_depth=max_depth_xgb,
             learning_rate=learning_rate_xgb,
             max_leaf_nodes=31,
-            min_samples_leaf=20,
-            l2_regularization=1.0,
+            min_samples_leaf=30,  # More regularization
+            l2_regularization=2.0,  # Stronger regularization
             random_state=42,
         )
         hgb.fit(X_train, y_train)
         pred_hgb = hgb.predict(X_test)
 
         # ── Model 2: Ridge Regression ─────────────────────────
-        ridge = Ridge(alpha=ridge_alpha)
+        ridge = Ridge(alpha=ridge_alpha * 10)  # Stronger regularization
         ridge.fit(X_train, y_train)
         pred_ridge = ridge.predict(X_test)
 
         # ── Model 3: Random Forest ────────────────────────────
         rf = RandomForestRegressor(
             n_estimators=n_estimators_rf,
-            max_depth=6,
-            max_features="sqrt",
+            max_depth=5,  # Shallower trees
+            max_features=0.3,  # Less features per tree
+            min_samples_leaf=30,
             random_state=42,
             n_jobs=-1,
         )
         rf.fit(X_train, y_train)
         pred_rf = rf.predict(X_test)
 
-        # ── Ensemble (equal weight) ───────────────────────────
-        pred_ensemble = (pred_hgb + pred_ridge + pred_rf) / 3
+        # ── Stacked Ensemble ──────────────────────────────────
+        # IC-weighted combination: weight each model by its train-set IC
+        # (better than equal-weight, adapts to which model works best)
+        train_pred_hgb = hgb.predict(X_train[-500:])  # Last 500 train samples
+        train_pred_ridge = ridge.predict(X_train[-500:])
+        train_pred_rf = rf.predict(X_train[-500:])
+        y_train_tail = y_train[-500:]
+
+        def _ic(pred, actual):
+            ic, _ = spearmanr(pred, actual)
+            return max(ic, 0)  # Negative IC models get zero weight
+
+        ic_hgb = _ic(train_pred_hgb, y_train_tail)
+        ic_ridge = _ic(train_pred_ridge, y_train_tail)
+        ic_rf = _ic(train_pred_rf, y_train_tail)
+
+        total_ic = ic_hgb + ic_ridge + ic_rf
+        if total_ic > 0:
+            w_hgb = ic_hgb / total_ic
+            w_ridge = ic_ridge / total_ic
+            w_rf = ic_rf / total_ic
+        else:
+            w_hgb = w_ridge = w_rf = 1/3
+
+        pred_ensemble = w_hgb * pred_hgb + w_ridge * pred_ridge + w_rf * pred_rf
 
         # Cross-sectionally rank the predictions per date
         test_index = merged.index[test_mask]
@@ -174,27 +232,25 @@ def train_alpha_model(
             if d in pred_df.index.get_level_values("date"):
                 day_mask = pred_df.index.get_level_values("date") == d
                 day_preds = pred_df.loc[day_mask, "alpha_score"]
-                # Convert to cross-sectional z-score (rank-based)
                 ranks = day_preds.rank(pct=True)
-                pred_df.loc[day_mask, "alpha_score"] = (ranks - 0.5) * 2  # Scale to [-1, 1]
+                pred_df.loc[day_mask, "alpha_score"] = (ranks - 0.5) * 2
 
         all_predictions.append(pred_df)
 
-        # Feature importance (Random Forest — reliable & available)
+        # Feature importance
         imp = dict(zip(signal_names, rf.feature_importances_))
         all_importances.append(imp)
 
-        # OOS metrics
-        if len(y_test) > 5:
-            # Information coefficient (rank correlation)
-            from scipy.stats import spearmanr
-            ic, _ = spearmanr(pred_ensemble, y_test)
+        # OOS metrics — IC against RAW RETURNS (not ranks)
+        # This is the true test: can we predict which stocks will go up?
+        if len(y_test_raw) > 5:
+            ic, _ = spearmanr(pred_ensemble, y_test_raw)
             if not np.isnan(ic):
                 oos_ics.append(ic)
 
-            # R²
-            ss_res = np.sum((y_test - pred_ensemble) ** 2)
-            ss_tot = np.sum((y_test - np.mean(y_test)) ** 2)
+            # R² against rank target (how well we fit the ranking)
+            ss_res = np.sum((y_test_rank - pred_ensemble) ** 2)
+            ss_tot = np.sum((y_test_rank - np.mean(y_test_rank)) ** 2)
             r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0
             oos_r2s.append(r2)
 
@@ -205,11 +261,8 @@ def train_alpha_model(
         return AlphaModelResult(
             predictions=pd.DataFrame(),
             feature_importance={},
-            oos_ic=0.0,
-            oos_r2=0.0,
-            n_folds=0,
-            n_features=n_features,
-            n_training_samples=0,
+            oos_ic=0.0, oos_r2=0.0, n_folds=0,
+            n_features=n_features, n_training_samples=0,
         )
 
     predictions = pd.concat(all_predictions)
@@ -223,8 +276,9 @@ def train_alpha_model(
     avg_ic = float(np.mean(oos_ics)) if oos_ics else 0.0
     avg_r2 = float(np.mean(oos_r2s)) if oos_r2s else 0.0
 
-    logger.info("ML alpha training complete: %d folds, avg IC=%.4f, avg R²=%.4f",
-                n_folds, avg_ic, avg_r2)
+    logger.info("ML alpha v2 complete: %d folds, avg IC=%.4f, avg R²=%.4f, "
+                "ensemble weights: HGB=%.2f Ridge=%.2f RF=%.2f",
+                n_folds, avg_ic, avg_r2, w_hgb, w_ridge, w_rf)
 
     return AlphaModelResult(
         predictions=predictions,

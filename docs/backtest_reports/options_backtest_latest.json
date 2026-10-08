@@ -1,0 +1,35 @@
+{
+  "IRON_CONDOR": {
+    "validated": false,
+    "reason": "OOS Sharpe 0.304 < 0.5 across 15 windows (15 with trades, 64 total OOS trades). IS Sharpe: -2.481 (15 IS windows with trades)",
+    "oos_sharpe": 0.3037,
+    "oos_return_pct": -8.23,
+    "oos_max_dd": 288.57,
+    "is_sharpe": -2.4814,
+    "is_return_pct": -53.53,
+    "is_max_dd": 635.37,
+    "n_windows": 15
+  },
+  "BULL_PUT_SPREAD": {
+    "validated": false,
+    "reason": "OOS Sharpe -0.463 < 0.5 across 15 windows (15 with trades, 75 total OOS trades). IS Sharpe: -1.298 (15 IS windows with trades)",
+    "oos_sharpe": -0.4625,
+    "oos_return_pct": -0.5,
+    "oos_max_dd": 222.93,
+    "is_sharpe": -1.2975,
+    "is_return_pct": -7.59,
+    "is_max_dd": 331.22,
+    "n_windows": 15
+  },
+  "BEAR_CALL_SPREAD": {
+    "validated": true,
+    "reason": "OOS Sharpe 0.995 \u2265 0.5 across 15 windows (15 with trades, 71 total OOS trades). IS Sharpe: -1.096 (15 IS windows with trades)",
+    "oos_sharpe": 0.9953,
+    "oos_return_pct": 10.66,
+    "oos_max_dd": 231.58,
+    "is_sharpe": -1.0957,
+    "is_return_pct": -1.09,
+    "is_max_dd": 472.69,
+    "n_windows": 15
+  }
+}

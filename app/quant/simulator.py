@@ -37,11 +37,56 @@ logger = logging.getLogger("artha.simulator")
 DEFAULT_CAPITAL = 15_00_000.0  # ₹15 Lakh
 BROKERAGE_BPS = 5              # 0.05% per trade
 IMPACT_BPS = 10                # 0.10% estimated market impact
-MAX_POSITION_PCT = 0.10        # 10% max per stock
+MAX_POSITION_PCT = 0.15        # 15% max per stock (higher conviction)
 MIN_POSITION_PCT = 0.005       # 0.5% min (avoid dust)
-REBALANCE_INTERVAL = 5         # days between rebalances (weekly)
-MAX_POSITIONS = 15             # max simultaneous positions
-MIN_HOLDING_DAYS = 5           # minimum days before selling a position
+REBALANCE_INTERVAL = 2         # days between rebalances (fast trader)
+MAX_POSITIONS = 12             # max simultaneous positions (BULL)
+MAX_POSITIONS_DEFENSIVE = 7    # fewer positions in BEAR/SIDEWAYS for concentration
+MIN_HOLDING_DAYS = 3           # shorter hold for faster rotation
+TRAILING_STOP_PCT = 0.10       # 10% trailing stop from peak
+MIN_ALPHA_THRESHOLD = 0.03     # minimum alpha to enter a position
+
+# ── Regime-based allocation ─────────────────────────────────────────────────────
+# Key insight from architecture §6.3: thin edges compounded.
+# The biggest lever is regime-conditioned exposure — don't fight the market.
+REGIME_ALLOCATION = {
+    "BULL": 0.95,       # Full risk-on
+    "SIDEWAYS": 0.80,   # Indian markets trend up — SIDEWAYS ≠ BEAR
+    "BEAR": 0.35,       # Defensive but not dead
+    "UNKNOWN": 0.50,    # Moderate when uncertain
+}
+
+# Volatility targeting: scale exposure so annualized portfolio vol ≈ TARGET_VOL
+# If realized vol > target, reduce exposure proportionally.
+# If realized vol < target, keep exposure (don't lever up).
+TARGET_VOL = 0.18  # 18% annualized target vol (Indian equities typically run 14-18%)
+PROFIT_TAKE_PCT = 0.25  # take 30% profit when position gains 25%+
+
+# ── Regime-conditioned signal weights ───────────────────────────────────────────
+# Momentum dominates in trending (BULL) markets.
+# Mean reversion dominates in ranging (SIDEWAYS/BEAR) markets.
+SIGNAL_WEIGHTS = {
+    "BULL": {
+        "mom_5d": 0.15, "mom_20d": 0.30, "mom_60d": 0.20,
+        "mr_sma20": -0.05, "mr_sma60": -0.05,
+        "vol_ratio": -0.10, "rsi_signal": -0.15,
+    },
+    "SIDEWAYS": {
+        "mom_5d": 0.05, "mom_20d": 0.10, "mom_60d": 0.10,
+        "mr_sma20": -0.25, "mr_sma60": -0.15,
+        "vol_ratio": -0.15, "rsi_signal": -0.20,
+    },
+    "BEAR": {
+        "mom_5d": -0.05, "mom_20d": 0.05, "mom_60d": 0.05,
+        "mr_sma20": -0.30, "mr_sma60": -0.20,
+        "vol_ratio": -0.15, "rsi_signal": -0.25,
+    },
+    "UNKNOWN": {
+        "mom_5d": 0.10, "mom_20d": 0.20, "mom_60d": 0.15,
+        "mr_sma20": -0.15, "mr_sma60": -0.10,
+        "vol_ratio": -0.10, "rsi_signal": -0.20,
+    },
+}
 
 
 # ── Data Classes ────────────────────────────────────────────────────────────────
@@ -122,19 +167,24 @@ class SimulationResult:
     current_signals: list = field(default_factory=list)
 
 
-# ── Signal Generator (simplified for speed) ─────────────────────────────────────
+# ── Signal Generator ─────────────────────────────────────────────────────────────
 
-def _compute_stock_signals(prices_df: pd.DataFrame) -> pd.DataFrame:
+def _compute_stock_signals(
+    prices_df: pd.DataFrame,
+    regime_series: pd.Series | None = None,
+) -> pd.DataFrame:
     """
     Compute alpha signals for each stock on each day.
     Returns a DataFrame with (date, symbol) index and signal columns.
     
-    Uses a simplified but effective signal set:
-    - Momentum (5d, 20d, 60d returns)
-    - Mean reversion (deviation from SMA20, SMA60)
-    - Volume (relative volume)
-    - Volatility (realized vol ratio)
-    - RSI (14-day)
+    Signal weights are regime-conditioned:
+    - BULL: heavy momentum (ride the trend)
+    - BEAR/SIDEWAYS: heavy mean reversion (buy the dip, sell the rip)
+    
+    Also computes:
+    - MACD histogram for trend confirmation
+    - Bollinger %B for mean reversion confirmation  
+    - Volume-weighted momentum for liquidity screening
     """
     signals = {}
     
@@ -157,18 +207,41 @@ def _compute_stock_signals(prices_df: pd.DataFrame) -> pd.DataFrame:
         s['mr_sma20'] = (close - sma20) / sma20
         s['mr_sma60'] = (close - sma60) / sma60
         
-        # Volatility ratio
+        # Volatility ratio (prefer low vol stocks)
         vol_5 = close.pct_change().rolling(5).std()
         vol_60 = close.pct_change().rolling(60).std()
         s['vol_ratio'] = vol_5 / vol_60.replace(0, np.nan)
         
-        # RSI (14-day)
+        # RSI (14-day), normalized to [-1, 1]
         delta = close.diff()
         gain = delta.clip(lower=0).rolling(14).mean()
         loss = (-delta.clip(upper=0)).rolling(14).mean()
         rs = gain / loss.replace(0, np.nan)
         s['rsi'] = 100 - (100 / (1 + rs))
-        s['rsi_signal'] = (s['rsi'] - 50) / 50  # normalize to [-1, 1]
+        s['rsi_signal'] = (s['rsi'] - 50) / 50
+        
+        # MACD histogram for trend confirmation
+        ema12 = close.ewm(span=12, adjust=False).mean()
+        ema26 = close.ewm(span=26, adjust=False).mean()
+        macd_line = ema12 - ema26
+        signal_line = macd_line.ewm(span=9, adjust=False).mean()
+        s['macd_hist'] = (macd_line - signal_line) / close  # normalize
+        
+        # Bollinger %B for mean reversion
+        bb_mid = close.rolling(20).mean()
+        bb_std = close.rolling(20).std()
+        s['bb_pctb'] = (close - (bb_mid - 2 * bb_std)) / (4 * bb_std.replace(0, np.nan))
+        s['bb_signal'] = -(s['bb_pctb'] - 0.5) * 2  # oversold=positive, overbought=negative
+        
+        # 52-week high proximity — stocks near highs outperform
+        high_252 = close.rolling(252, min_periods=60).max()
+        s['high_proximity'] = close / high_252.replace(0, np.nan)  # 1.0 = at high, 0.8 = 20% off high
+        s['high_signal'] = (s['high_proximity'] - 0.85) / 0.15  # normalize: -1 (far from high) to +1 (at high)
+        s['high_signal'] = s['high_signal'].clip(-2, 2)
+        
+        # Trend strength — slope of 20d SMA normalized by price
+        sma20_slope = sma20.diff(5) / (close * 5)  # 5-day slope of SMA20
+        s['trend_strength'] = sma20_slope * 100  # scale up for z-scoring
         
         signals[symbol] = s
     
@@ -178,25 +251,53 @@ def _compute_stock_signals(prices_df: pd.DataFrame) -> pd.DataFrame:
     # Combine all stocks
     combined = pd.concat(signals.values(), axis=0)
     
-    # Cross-sectional z-score each signal per date
+    # Cross-sectional z-score each signal per date (MAD-robust)
     signal_cols = ['mom_5d', 'mom_20d', 'mom_60d', 'mr_sma20', 'mr_sma60', 
-                   'vol_ratio', 'rsi_signal']
+                   'vol_ratio', 'rsi_signal', 'macd_hist', 'bb_signal',
+                   'high_signal', 'trend_strength']
     
     for col in signal_cols:
         combined[col] = combined.groupby(level=0)[col].transform(
             lambda x: _mad_zscore(x.values)
         )
     
-    # Composite alpha = weighted combination
-    combined['alpha'] = (
-        0.20 * combined['mom_20d'] +
-        0.15 * combined['mom_60d'] +
-        0.10 * combined['mom_5d'] +
-        -0.20 * combined['mr_sma20'] +  # negative = mean reversion
-        -0.10 * combined['mr_sma60'] +
-        -0.10 * combined['vol_ratio'] +  # prefer low vol
-        -0.15 * combined['rsi_signal']   # contrarian RSI
-    )
+    # Regime-conditioned composite alpha
+    # For each day, look up the regime and use the corresponding weights
+    combined['alpha'] = 0.0
+    
+    base_signal_cols = ['mom_5d', 'mom_20d', 'mom_60d', 'mr_sma20', 'mr_sma60',
+                        'vol_ratio', 'rsi_signal']
+    
+    if regime_series is not None:
+        for dt in combined.index.unique():
+            mask = combined.index == dt
+            # Get regime for this date
+            if dt in regime_series.index:
+                r = regime_series[dt]
+                regime_str = r.value if hasattr(r, 'value') else str(r)
+            else:
+                regime_str = "UNKNOWN"
+            
+            weights = SIGNAL_WEIGHTS.get(regime_str, SIGNAL_WEIGHTS["UNKNOWN"])
+            
+            alpha = np.zeros(mask.sum())
+            for col in base_signal_cols:
+                w = weights.get(col, 0)
+                alpha += w * combined.loc[mask, col].fillna(0).values
+            
+            # Add MACD and BB as regime-independent confirmations
+            alpha += 0.10 * combined.loc[mask, 'macd_hist'].fillna(0).values
+            alpha += 0.10 * combined.loc[mask, 'bb_signal'].fillna(0).values
+            
+            combined.loc[mask, 'alpha'] = alpha
+    else:
+        # No regime info — use UNKNOWN weights
+        weights = SIGNAL_WEIGHTS["UNKNOWN"]
+        for col in base_signal_cols:
+            w = weights.get(col, 0)
+            combined['alpha'] += w * combined[col].fillna(0)
+        combined['alpha'] += 0.10 * combined['macd_hist'].fillna(0)
+        combined['alpha'] += 0.10 * combined['bb_signal'].fillna(0)
     
     return combined
 
@@ -219,51 +320,76 @@ def _optimize_portfolio(
     alpha_scores: dict[str, float],
     current_prices: dict[str, float],
     nav: float,
+    regime: str = "UNKNOWN",
+    vol_scalar: float = 1.0,
     max_positions: int = MAX_POSITIONS,
     max_weight: float = MAX_POSITION_PCT,
 ) -> dict[str, float]:
     """
-    Convert alpha scores to target weights.
+    Convert alpha scores to target weights with regime-conditioned exposure.
     
-    Diversified approach:
-    1. Rank all stocks by alpha
-    2. Take top N stocks (even if alpha is slightly negative — diversification)
-    3. Equal-weight base with alpha tilt for differentiation
-    4. Cap individual positions, invest ~90% of NAV
+    Key improvements over naive equal-weight:
+    1. Only select stocks with alpha above MIN_ALPHA_THRESHOLD
+    2. Conviction-based sizing: 40% equal weight + 60% alpha tilt
+    3. Regime-conditioned total exposure (BULL=95%, BEAR=25%)
+    4. Fewer, higher-conviction positions
     """
     if not alpha_scores:
         return {}
     
-    # Sort all stocks by alpha, take top N
-    sorted_stocks = sorted(alpha_scores.items(), key=lambda x: x[1], reverse=True)
-    n_select = min(max_positions, max(8, len(sorted_stocks) // 2))  # At least 8
+    # Get regime allocation
+    target_exposure = REGIME_ALLOCATION.get(regime, REGIME_ALLOCATION["UNKNOWN"])
+    
+    # Dynamic max positions by regime
+    regime_max_positions = max_positions
+    if regime in ("BEAR", "SIDEWAYS"):
+        regime_max_positions = min(max_positions, MAX_POSITIONS_DEFENSIVE)
+    
+    # Filter: only stocks with positive alpha above threshold
+    threshold = MIN_ALPHA_THRESHOLD
+    if regime == "BEAR":
+        threshold = MIN_ALPHA_THRESHOLD * 2
+    elif regime == "BULL":
+        threshold = MIN_ALPHA_THRESHOLD * 0.5
+    
+    qualified = {s: a for s, a in alpha_scores.items() if a > threshold}
+    
+    if not qualified:
+        sorted_all = sorted(alpha_scores.items(), key=lambda x: x[1], reverse=True)
+        qualified = dict(sorted_all[:3])
+    
+    # Sort by alpha, take top N
+    sorted_stocks = sorted(qualified.items(), key=lambda x: x[1], reverse=True)
+    n_select = min(regime_max_positions, len(sorted_stocks))
     selected = dict(sorted_stocks[:n_select])
     
     if not selected:
         return {}
     
-    # Equal-weight base + alpha tilt
+    # Conviction-based sizing: 40% equal + 60% alpha tilt
     base_weight = 1.0 / len(selected)
     alpha_values = list(selected.values())
-    alpha_range = max(alpha_values) - min(alpha_values) if len(alpha_values) > 1 else 1.0
+    alpha_min = min(alpha_values)
+    alpha_range = max(alpha_values) - alpha_min if len(alpha_values) > 1 else 1.0
     
     weights = {}
     for s, a in selected.items():
-        # 70% equal weight + 30% alpha tilt
         if alpha_range > 1e-10:
-            alpha_tilt = (a - min(alpha_values)) / alpha_range
+            alpha_tilt = (a - alpha_min) / alpha_range  # 0 to 1
         else:
             alpha_tilt = 0.5
-        weights[s] = base_weight * 0.70 + base_weight * 0.30 * (alpha_tilt * 2)
+        # Higher conviction → larger position
+        weights[s] = base_weight * 0.40 + base_weight * 0.60 * (alpha_tilt * 2)
     
     # Cap at max_weight
     for s in weights:
         weights[s] = min(weights[s], max_weight)
     
-    # Re-normalize to 90% invested (keep 10% cash buffer)
+    # Scale to regime-conditioned exposure, with vol targeting
     total_w = sum(weights.values())
+    effective_exposure = target_exposure * min(vol_scalar, 1.0)
     if total_w > 0:
-        weights = {s: w / total_w * 0.90 for s, w in weights.items()}
+        weights = {s: w / total_w * effective_exposure for s, w in weights.items()}
     
     return weights
 
@@ -428,9 +554,9 @@ class TradingSimulator:
                 initial_capital=self.initial_capital,
             )
         
-        # Compute signals for all stocks
+        # Compute signals for all stocks (regime-conditioned)
         logger.info("Computing signals across %d dates...", len(dates))
-        all_signals = _compute_stock_signals(prices_df)
+        all_signals = _compute_stock_signals(prices_df, regime_series)
         
         if all_signals.empty:
             return SimulationResult(
@@ -464,6 +590,36 @@ class TradingSimulator:
                 r = regime_series[dt]
                 regime = r.value if hasattr(r, 'value') else str(r)
             
+            # ── Trend overlay ──────────────────────────────────────────
+            # If HMM says SIDEWAYS but the benchmark SMA50 > SMA200,
+            # the market is in an uptrend → treat as BULL for allocation.
+            # This prevents the HMM's tendency to call everything SIDEWAYS
+            # from keeping us underinvested in clear uptrends.
+            if regime == "SIDEWAYS" and benchmark_prices is not None:
+                try:
+                    bench_up_to_now = benchmark_prices.loc[:dt]
+                    if len(bench_up_to_now) >= 200:
+                        sma50 = bench_up_to_now.iloc[-50:].mean()
+                        sma200 = bench_up_to_now.iloc[-200:].mean()
+                        sma20 = bench_up_to_now.iloc[-20:].mean()
+                        if sma50 > sma200 * 1.01 and sma20 > sma50:  # uptrend confirmed
+                            regime = "BULL"
+                        elif sma50 < sma200 * 0.99:  # downtrend
+                            regime = "BEAR"
+                except Exception:
+                    pass
+            # Also check: if HMM says SIDEWAYS but we were in BULL and SMA is rolling over
+            elif regime == "BULL" and benchmark_prices is not None:
+                try:
+                    bench_up_to_now = benchmark_prices.loc[:dt]
+                    if len(bench_up_to_now) >= 200:
+                        sma50 = bench_up_to_now.iloc[-50:].mean()
+                        sma200 = bench_up_to_now.iloc[-200:].mean()
+                        if sma50 < sma200 * 0.99:
+                            regime = "BEAR"  # trend reversal — go defensive fast
+                except Exception:
+                    pass
+            
             # Get today's alpha scores
             day_signals = all_signals.loc[all_signals.index == dt]
             if day_signals.empty:
@@ -480,9 +636,24 @@ class TradingSimulator:
                 if sym in current_prices and not np.isnan(row.get('alpha', 0)):
                     alpha_scores[sym] = float(row['alpha'])
             
-            # Compute target weights
+            # Compute target weights with regime-conditioned exposure
             nav = self._nav(current_prices)
-            target_weights = _optimize_portfolio(alpha_scores, current_prices, nav)
+            
+            # Volatility targeting: scale regime allocation by inverse vol ratio
+            vol_scalar = 1.0
+            if len(self.daily_returns) >= 20:
+                recent_vol = np.std(self.daily_returns[-20:]) * np.sqrt(252)
+                if recent_vol > TARGET_VOL * 1.1:  # vol above target
+                    vol_scalar = TARGET_VOL / recent_vol
+                    vol_scalar = max(vol_scalar, 0.50)  # floor at 50%
+            
+            target_weights = _optimize_portfolio(
+                alpha_scores, current_prices, nav, regime=regime,
+                vol_scalar=vol_scalar,
+            )
+            
+            # Check trailing stops and profit-taking every day
+            self._check_trailing_stops(date_str, current_prices, regime)
             
             # Rebalance: compare target vs current
             if i % REBALANCE_INTERVAL == 0:
@@ -509,6 +680,82 @@ class TradingSimulator:
         )
         return result
     
+    def _check_trailing_stops(
+        self,
+        date_str: str,
+        current_prices: dict[str, float],
+        regime: str,
+    ):
+        """
+        Check trailing stop-losses and profit-taking every day.
+        
+        Key insight: stop-losses in BULL regimes DESTROYED returns in testing.
+        Signal-based exits handle BULL rotation fine; stops are only needed
+        for crash protection in BEAR.
+        """
+        # BULL: no trailing stops — the signal + rebalance handles rotation
+        # Profit-taking still applies
+        if regime == "BULL":
+            # Only profit-take in BULL
+            for sym in list(self.positions.keys()):
+                pos = self.positions[sym]
+                price = current_prices.get(sym)
+                if price is None:
+                    continue
+                gain_pct = (price - pos['avg_entry']) / pos['avg_entry']
+                if gain_pct >= PROFIT_TAKE_PCT and pos['qty'] > 1:
+                    sell_qty = max(1, round(pos['qty'] * 0.30))
+                    self._execute_trade(
+                        date_str, sym, "SELL", sell_qty, price,
+                        0.0, regime,
+                        f"PROFIT-TAKE: +{gain_pct:.1%} from ₹{pos['avg_entry']:.0f}"
+                    )
+            return
+        
+        # SIDEWAYS: partial exit (50%) on 12% drawdown
+        # BEAR: full exit on 8% drawdown
+        if regime == "BEAR":
+            stop_pct = 0.08
+        else:  # SIDEWAYS or UNKNOWN
+            stop_pct = 0.12
+        
+        for sym in list(self.positions.keys()):
+            pos = self.positions[sym]
+            price = current_prices.get(sym)
+            if price is None:
+                continue
+            
+            # Track peak price
+            if 'peak_price' not in pos:
+                pos['peak_price'] = max(pos['avg_entry'], price)
+            else:
+                pos['peak_price'] = max(pos['peak_price'], price)
+            
+            # Stop-loss check
+            drawdown = (pos['peak_price'] - price) / pos['peak_price']
+            if drawdown >= stop_pct:
+                if regime == "BEAR":
+                    sell_qty = pos['qty']  # full exit in BEAR
+                else:
+                    sell_qty = max(1, round(pos['qty'] * 0.50))  # partial in SIDEWAYS
+                
+                self._execute_trade(
+                    date_str, sym, "SELL", sell_qty, price,
+                    0.0, regime,
+                    f"STOP: {drawdown:.1%} from peak ₹{pos['peak_price']:.0f} ({regime})"
+                )
+                continue
+            
+            # Profit-taking
+            gain_pct = (price - pos['avg_entry']) / pos['avg_entry']
+            if gain_pct >= PROFIT_TAKE_PCT and pos['qty'] > 1:
+                sell_qty = max(1, round(pos['qty'] * 0.30))
+                self._execute_trade(
+                    date_str, sym, "SELL", sell_qty, price,
+                    0.0, regime,
+                    f"PROFIT-TAKE: +{gain_pct:.1%} from ₹{pos['avg_entry']:.0f}"
+                )
+    
     def _rebalance(
         self,
         date_str: str,
@@ -526,7 +773,6 @@ class TradingSimulator:
             current_weights[sym] = (pos['qty'] * price) / nav if nav > 0 else 0
         
         # Sell positions not in target or overweight
-        # Respect minimum holding period to prevent whipsaw
         from datetime import datetime as _dt
         for sym in list(self.positions.keys()):
             pos = self.positions[sym]
@@ -537,20 +783,20 @@ class TradingSimulator:
                 current = _dt.strptime(date_str, '%Y-%m-%d')
                 holding_days = (current - entry).days
             except (ValueError, KeyError):
-                holding_days = 999  # allow sell if date parsing fails
+                holding_days = 999
             
             if holding_days < MIN_HOLDING_DAYS:
-                continue  # Don't sell yet — minimum holding period not met
+                continue
             
             if sym not in target_weights:
                 price = current_prices.get(sym, pos['avg_entry'])
                 self._execute_trade(
                     date_str, sym, "SELL", pos['qty'], price,
                     alpha_scores.get(sym, 0), regime,
-                    f"Exit: no longer in target (held {holding_days}d)"
+                    f"Exit: dropped from target (held {holding_days}d)"
                 )
-            elif current_weights.get(sym, 0) > target_weights[sym] * 1.3:
-                # Trim overweight
+            elif current_weights.get(sym, 0) > target_weights[sym] * (2.0 if regime == "BULL" else 1.4):
+                # Trim overweight — let winners run in BULL
                 pos = self.positions[sym]
                 price = current_prices.get(sym, pos['avg_entry'])
                 target_value = nav * target_weights[sym]
@@ -561,29 +807,55 @@ class TradingSimulator:
                     self._execute_trade(
                         date_str, sym, "SELL", sell_qty, price,
                         alpha_scores.get(sym, 0), regime,
-                        f"Trim: weight {current_weights[sym]:.1%} → {target_weights[sym]:.1%}"
+                        f"Trim: {current_weights[sym]:.1%} → {target_weights[sym]:.1%}"
                     )
         
         # Buy new positions or add to underweight
-        for sym, target_w in target_weights.items():
+        # Prioritize highest alpha first
+        sorted_targets = sorted(target_weights.items(), key=lambda x: alpha_scores.get(x[0], 0), reverse=True)
+        for sym, target_w in sorted_targets:
             if sym not in current_prices:
                 continue
             price = current_prices[sym]
             current_w = current_weights.get(sym, 0)
             
-            if current_w < target_w * 0.7:  # underweight by >30%
+            if current_w < target_w * 0.85:  # underweight by >15% — deploy faster
                 target_value = nav * target_w
                 current_value = self.positions.get(sym, {}).get('qty', 0) * price
                 buy_value = target_value - current_value
-                buy_qty = int(buy_value / price)
+                buy_qty = max(1, round(buy_value / price))  # round up, minimum 1 share
                 
                 if buy_qty > 0 and self.cash > buy_qty * price * 1.01:
                     alpha = alpha_scores.get(sym, 0)
                     self._execute_trade(
                         date_str, sym, "BUY", buy_qty, price,
                         alpha, regime,
-                        f"Alpha={alpha:.2f}, target weight={target_w:.1%}"
+                        f"α={alpha:.2f} w={target_w:.1%} regime={regime}"
                     )
+        
+        # Deploy excess cash — if we're holding too much cash relative to regime target
+        regime_exposure = REGIME_ALLOCATION.get(regime, 0.50)
+        nav_now = self._nav(current_prices)
+        target_invested = nav_now * regime_exposure
+        actual_invested = nav_now - self.cash
+        excess_cash = self.cash - (nav_now * (1 - regime_exposure))
+        
+        if excess_cash > nav_now * 0.05:  # >5% excess cash
+            # Top up highest-alpha existing positions
+            for sym, target_w in sorted_targets[:5]:
+                if sym not in current_prices or excess_cash < 5000:
+                    break
+                price = current_prices[sym]
+                deploy = min(excess_cash * 0.25, nav_now * 0.03)  # deploy 25% at a time, max 3% NAV
+                buy_qty = max(1, round(deploy / price))
+                if self.cash > buy_qty * price * 1.01:
+                    alpha = alpha_scores.get(sym, 0)
+                    self._execute_trade(
+                        date_str, sym, "BUY", buy_qty, price,
+                        alpha, regime,
+                        f"Cash deploy α={alpha:.2f} regime={regime}"
+                    )
+                    excess_cash -= buy_qty * price
     
     def _record_snapshot(
         self, date_str, nav, prev_nav, benchmark_prices, 

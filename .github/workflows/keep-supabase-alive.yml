@@ -1,0 +1,16 @@
+name: Keep Supabase Alive
+
+on:
+  schedule:
+    # Runs every day at midnight (00:00 UTC) to prevent the project from pausing
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase API
+        run: |
+          echo "Pinging Supabase to prevent sleep..."
+          curl -s -I -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" "https://etajspdgktfyrrwywlkm.supabase.co/rest/v1/"

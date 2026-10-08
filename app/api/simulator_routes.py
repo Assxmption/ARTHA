@@ -53,11 +53,12 @@ class SimStartRequest(BaseModel):
         ],
         description="NSE symbols to trade"
     )
+    strategy_type: str = Field(default="EQUITY_LONG_ONLY", description="Strategy to run")
 
 
 # ── Background simulation runner ────────────────────────────────────────────
 
-def _run_simulation(sim_id: str, capital: float, days: int, symbols: list[str]):
+def _run_simulation(sim_id: str, capital: float, days: int, symbols: list[str], strategy_type: str = "EQUITY_LONG_ONLY"):
     """Run simulation in background thread."""
     import numpy as np
     import pandas as pd
@@ -114,12 +115,213 @@ def _run_simulation(sim_id: str, capital: float, days: int, symbols: list[str]):
             _simulations[sim_id]["progress"] = f"Regime: {current_regime}. Running simulation..."
         
         # Run simulation
-        from app.quant.simulator import TradingSimulator
-        sim = TradingSimulator(initial_capital=capital)
-        result = sim.run_historical_replay(prices, bench_prices, regime_series)
+        if strategy_type == "IRON_CONDOR":
+            from app.quant.options_backtest import OptionsBacktester, precompute_signals
+            from app.quant.options_strategies import StrategyType
+            from app.data.vix import get_vix_close
+            
+            with _sim_lock:
+                _simulations[sim_id]["progress"] = "Pre-computing options signals..."
+                
+            vix_series = get_vix_close()
+            # We assume bench_prices is NIFTY for Iron Condor
+            precompute_signals(bench_prices, vix_series, regime_series)
+            
+            sim = OptionsBacktester(capital=capital, options_pct=0.30, max_concurrent=5)
+            result = sim.backtest_strategy(
+                close_prices=bench_prices,
+                regime_series=regime_series,
+                vix_series=vix_series,
+                strategy_type=StrategyType.IRON_CONDOR,
+                symbol="NIFTY",
+                entry_interval=7
+            )
+        elif strategy_type == "MULTI_STRATEGY":
+            import subprocess
+            import json
+            from pathlib import Path
+            
+            with _sim_lock:
+                _simulations[sim_id]["progress"] = "Starting Multi-Strategy Engine..."
+                
+            # Run the actual script
+            process = subprocess.Popen(
+                ["python", "scripts/run_multi_strategy_backtest.py"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                cwd="/Users/goral/Documents/multi_agent_stock_analyzer"
+            )
+            
+            for line in iter(process.stdout.readline, ''):
+                line = line.strip()
+                if line:
+                    # Clean up the logger prefix to just show the message
+                    if "] artha.multi_strategy_backtest:" in line:
+                        msg = line.split("] artha.multi_strategy_backtest:")[-1].strip()
+                    else:
+                        msg = line
+                        
+                    with _sim_lock:
+                        _simulations[sim_id]["progress"] = msg
+                        
+            process.stdout.close()
+            retcode = process.wait()
+            
+            if retcode != 0:
+                raise Exception(f"Multi-strategy script failed with code {retcode}")
+                
+            # Read the latest report
+            reports_dir = Path("docs/backtest_reports")
+            reports = sorted(reports_dir.glob("multi_strategy_*.json"))
+            if not reports:
+                raise Exception("No backtest report found after running script")
+                
+            latest_report = reports[-1]
+            with open(latest_report, "r") as f:
+                report_data = json.load(f)
+                
+            # Prefer hedged_portfolio over portfolio
+            port_key = "hedged_portfolio" if "hedged_portfolio" in report_data.get("strategies", {}) else "portfolio"
+            metrics = report_data["strategies"].get(port_key, report_data.get("portfolio", {}))
+            
+            def parse_pct(val):
+                if isinstance(val, str) and val.endswith("%"):
+                    return float(val.strip("%"))
+                return float(val) if val is not None else 0.0
+                
+            total_ret_pct = parse_pct(metrics.get("total_return", 0))
+            
+            result_dict = {
+                "initial_capital": capital,
+                "final_nav": capital * (1 + (total_ret_pct / 100.0)),
+                "total_return_pct": total_ret_pct,
+                "total_pnl": capital * (total_ret_pct / 100.0),
+                "sharpe_ratio": float(metrics.get("sharpe_ratio", 0)),
+                "sortino_ratio": float(metrics.get("sortino_ratio", 0)),
+                "max_drawdown_pct": parse_pct(metrics.get("max_drawdown", 0)),
+                "win_rate": parse_pct(metrics.get("win_rate", 0)),
+                "total_trades": metrics.get("n_trading_days", 0), # Proxy
+                "trade_log": [],
+            }
+        elif strategy_type == "PCA_STATARB":
+            from app.quant.pca_statarb import backtest_pca_statarb
+            with _sim_lock:
+                _simulations[sim_id]["progress"] = "Running PCA StatArb..."
+            # Pass all prices to PCA StatArb
+            result = backtest_pca_statarb(prices, bench_prices, regime_series, capital=capital)
+        else:
+            from app.quant.simulator import TradingSimulator
+            sim = TradingSimulator(initial_capital=capital)
+            result = sim.run_historical_replay(prices, bench_prices, regime_series)
         
         # Store results
-        result_dict = vars(result) if hasattr(result, '__dict__') else result
+        if strategy_type == "IRON_CONDOR":
+            result_dict = {
+                "initial_capital": capital,
+                "final_nav": capital + result.total_pnl,
+                "total_return_pct": result.total_return_pct,
+                "total_pnl": result.total_pnl,
+                "sharpe_ratio": result.sharpe_ratio,
+                "sortino_ratio": result.sortino_ratio,
+                "max_drawdown_pct": result.max_drawdown_pct,
+                "win_rate": result.win_rate,
+                "total_trades": result.n_trades,
+                "trade_log": result.trades,
+            }
+        elif strategy_type == "MULTI_STRATEGY":
+            import subprocess
+            import json
+            from pathlib import Path
+            
+            with _sim_lock:
+                _simulations[sim_id]["progress"] = "Starting Multi-Strategy Engine..."
+                
+            # Run the actual script
+            process = subprocess.Popen(
+                ["python", "scripts/run_multi_strategy_backtest.py"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                cwd="/Users/goral/Documents/multi_agent_stock_analyzer"
+            )
+            
+            for line in iter(process.stdout.readline, ''):
+                line = line.strip()
+                if line:
+                    # Clean up the logger prefix to just show the message
+                    if "] artha.multi_strategy_backtest:" in line:
+                        msg = line.split("] artha.multi_strategy_backtest:")[-1].strip()
+                    else:
+                        msg = line
+                        
+                    with _sim_lock:
+                        _simulations[sim_id]["progress"] = msg
+                        
+            process.stdout.close()
+            retcode = process.wait()
+            
+            if retcode != 0:
+                raise Exception(f"Multi-strategy script failed with code {retcode}")
+                
+            # Read the latest report
+            reports_dir = Path("docs/backtest_reports")
+            reports = sorted(reports_dir.glob("multi_strategy_*.json"))
+            if not reports:
+                raise Exception("No backtest report found after running script")
+                
+            latest_report = reports[-1]
+            with open(latest_report, "r") as f:
+                report_data = json.load(f)
+                
+            # Prefer hedged_portfolio over portfolio
+            port_key = "hedged_portfolio" if "hedged_portfolio" in report_data.get("strategies", {}) else "portfolio"
+            metrics = report_data["strategies"].get(port_key, report_data.get("portfolio", {}))
+            
+            def parse_pct(val):
+                if isinstance(val, str) and val.endswith("%"):
+                    return float(val.strip("%"))
+                return float(val) if val is not None else 0.0
+                
+            total_ret_pct = parse_pct(metrics.get("total_return", 0))
+            
+            result_dict = {
+                "initial_capital": capital,
+                "final_nav": capital * (1 + (total_ret_pct / 100.0)),
+                "total_return_pct": total_ret_pct,
+                "total_pnl": capital * (total_ret_pct / 100.0),
+                "sharpe_ratio": float(metrics.get("sharpe_ratio", 0)),
+                "sortino_ratio": float(metrics.get("sortino_ratio", 0)),
+                "max_drawdown_pct": parse_pct(metrics.get("max_drawdown", 0)),
+                "win_rate": parse_pct(metrics.get("win_rate", 0)),
+                "total_trades": metrics.get("n_trading_days", 0), # Proxy
+                "trade_log": [],
+            }
+        elif strategy_type == "PCA_STATARB":
+            # PCA StatArb returns pd.Series of daily returns
+            total_ret = (1 + result).prod() - 1
+            ann_vol = result.std() * np.sqrt(252)
+            sharpe = (result.mean() / result.std() * np.sqrt(252)) if result.std() > 0 else 0
+            downside = result[result < 0]
+            sortino = (result.mean() / downside.std() * np.sqrt(252)) if len(downside) > 0 and downside.std() > 0 else 0
+            cum = (1 + result).cumprod()
+            max_dd = (cum / cum.cummax() - 1).min() * 100
+            
+            result_dict = {
+                "initial_capital": capital,
+                "final_nav": capital * (1 + total_ret),
+                "total_return_pct": total_ret * 100,
+                "total_pnl": capital * total_ret,
+                "sharpe_ratio": sharpe,
+                "sortino_ratio": sortino,
+                "max_drawdown_pct": abs(max_dd),
+                "win_rate": len(result[result > 0]) / len(result) * 100 if len(result) > 0 else 0,
+                "total_trades": len(result[result != 0]), # Proxy
+                "trade_log": [{"date": d.strftime("%Y-%m-%d"), "pnl": p} for d, p in result.items() if p != 0],
+            }
+        else:
+            result_dict = vars(result) if hasattr(result, '__dict__') else result
+            
         result_dict['regime_stats'] = regime_stats
         result_dict['current_regime'] = str(current_regime)
         result_dict['universe'] = list(prices.columns)
@@ -158,7 +360,7 @@ async def start_simulation(req: SimStartRequest, bg: BackgroundTasks):
             "started_at": time.time(),
         }
     
-    bg.add_task(_run_simulation, sim_id, req.capital, req.days, req.symbols)
+    bg.add_task(_run_simulation, sim_id, req.capital, req.days, req.symbols, req.strategy_type)
     
     return {
         "sim_id": sim_id,

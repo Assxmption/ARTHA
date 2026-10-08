@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
@@ -73,14 +73,18 @@ from app.security import apply_security
 apply_security(app)
 
 # ── API Routes ─────────────────────────────────────────────────────────────────
-from app.api.routes import router
 from app.api.quant_routes import quant_router
 from app.api.analysis_routes import router as analysis_router
 from app.api.simulator_routes import router as simulator_router
-app.include_router(router)
+from app.api.company_routes import router as company_router
+from app.api.paper_trade_routes import router as paper_trade_router
+from app.api.screener_routes import router as screener_router
 app.include_router(quant_router)
 app.include_router(analysis_router)
 app.include_router(simulator_router)
+app.include_router(company_router)
+app.include_router(paper_trade_router)
+app.include_router(screener_router)
 
 # ── Static Files (Frontend) ───────────────────────────────────────────────────
 frontend_dir = Path("frontend/dist")
@@ -95,11 +99,21 @@ if frontend_dir.exists():
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
         """Catch-all for SPA routing."""
+        if full_path.startswith("api/"):
+            logger.warning(f"API request fell through to SPA catch-all! Path: {full_path}")
+            
         index = frontend_dir / "index.html"
         requested = frontend_dir / full_path
         if requested.exists() and requested.is_file():
             return FileResponse(str(requested))
         return FileResponse(str(index))
+
+@app.middleware("http")
+async def add_cache_control_header(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api"):
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 
 # ── Dev Entry Point ────────────────────────────────────────────────────────────

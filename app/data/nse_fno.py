@@ -116,15 +116,18 @@ def fetch_option_chain_nselib(symbol: str) -> Optional[dict]:
     Returns data in a normalized format matching NSE's API structure.
     """
     try:
-        from nselib import capital_market
+        from nselib import derivatives
         
-        # nselib may use different function names depending on version
+        # Try the new 2.5.1 method
         try:
-            data = capital_market.option_chain(symbol.upper())
+            data = derivatives.nse_live_option_chain(symbol.upper())
         except AttributeError:
-            # Try derivatives module
-            from nselib import derivatives
-            data = derivatives.option_chain(symbol.upper())
+            # Fallbacks for other versions
+            try:
+                from nselib import capital_market
+                data = capital_market.option_chain(symbol.upper())
+            except AttributeError:
+                data = derivatives.option_chain(symbol.upper())
         
         if data is not None and not data.empty:
             return _normalize_nselib_data(data, symbol)
@@ -213,15 +216,8 @@ def get_option_chain(symbol: str) -> dict:
             source = "nse_direct"
     
     if not raw:
-        return {
-            "symbol": symbol.upper(),
-            "spotPrice": 0,
-            "expiry": "",
-            "calls": [],
-            "puts": [],
-            "source": "none",
-            "error": f"Could not fetch option chain for {symbol}",
-        }
+        logger.warning(f"All real option chain fetches failed for {symbol}. Using mock fallback.")
+        return _generate_mock_option_chain(symbol)
     
     return _format_option_chain(raw, symbol, source)
 
@@ -317,6 +313,94 @@ def _format_option_chain(raw: dict, symbol: str, source: str) -> dict:
         "source": source,
     }
 
+
+# ── CLI for testing ─────────────────────────────────────────────────────────────
+
+def _generate_mock_option_chain(symbol: str) -> dict:
+    import yfinance as yf
+    import numpy as np
+    from datetime import timedelta
+    
+    try:
+        ticker = yf.Ticker(f"{symbol}.NS" if symbol not in ["NIFTY", "BANKNIFTY"] else ("^NSEI" if symbol == "NIFTY" else "^NSEBANK"))
+        hist = ticker.history(period="1d")
+        spot = float(hist['Close'].iloc[-1]) if not hist.empty else 1000.0
+    except:
+        spot = 1000.0
+        
+    strike_step = 50 if spot < 5000 else 100
+    base_strike = round(spot / strike_step) * strike_step
+    
+    calls = []
+    puts = []
+    
+    # Generate 10 strikes above and below ATM
+    for i in range(-10, 11):
+        strike = base_strike + (i * strike_step)
+        
+        # Simple pricing model for mock data
+        distance = abs(strike - spot)
+        moneyness = distance / spot
+        
+        # IV smile mock
+        iv = 15.0 + (moneyness * 100)
+        
+        # Mock OI and volume (higher near ATM)
+        base_oi = int(100000 * (1 - min(moneyness * 5, 0.9)))
+        base_vol = int(base_oi * 0.5)
+        
+        # Call pricing: ITM when strike < spot
+        is_call_itm = strike < spot
+        call_intrinsic = max(0, spot - strike)
+        call_time_value = spot * 0.02 * (1 - min(moneyness * 5, 0.9))
+        call_price = call_intrinsic + call_time_value
+        
+        calls.append({
+            "strike": float(strike),
+            "lastPrice": round(call_price, 2),
+            "volume": base_vol,
+            "openInterest": base_oi,
+            "changeinOI": int(base_oi * (np.random.random() - 0.3)), # Random bias
+            "impliedVolatility": round(iv, 2),
+            "change": round(call_price * (np.random.random() - 0.5) * 0.1, 2),
+            "bidPrice": round(call_price * 0.99, 2),
+            "askPrice": round(call_price * 1.01, 2),
+        })
+        
+        # Put pricing: ITM when strike > spot
+        put_intrinsic = max(0, strike - spot)
+        put_time_value = spot * 0.02 * (1 - min(moneyness * 5, 0.9))
+        put_price = put_intrinsic + put_time_value
+        
+        puts.append({
+            "strike": float(strike),
+            "lastPrice": round(put_price, 2),
+            "volume": int(base_vol * 1.1), # Slight put bias
+            "openInterest": int(base_oi * 1.2),
+            "changeinOI": int(base_oi * (np.random.random() - 0.3)),
+            "impliedVolatility": round(iv * 1.1, 2),
+            "change": round(put_price * (np.random.random() - 0.5) * 0.1, 2),
+            "bidPrice": round(put_price * 0.99, 2),
+            "askPrice": round(put_price * 1.01, 2),
+        })
+        
+    next_thursday = date.today()
+    while next_thursday.weekday() != 3: # Thursday
+        next_thursday += timedelta(days=1)
+        
+    return {
+        "symbol": symbol.upper(),
+        "spotPrice": round(spot, 2),
+        "expiry": next_thursday.strftime("%d-%b-%Y"),
+        "expiryDates": [next_thursday.strftime("%d-%b-%Y")],
+        "calls": calls,
+        "puts": puts,
+        "totalCallOI": sum(c["openInterest"] for c in calls),
+        "totalPutOI": sum(p["openInterest"] for p in puts),
+        "pcr": round(sum(p["openInterest"] for p in puts) / max(sum(c["openInterest"] for c in calls), 1), 3),
+        "source": "mock_fallback",
+        "error": "Real APIs failed, using synthetic data",
+    }
 
 # ── CLI for testing ─────────────────────────────────────────────────────────────
 

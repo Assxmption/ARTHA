@@ -159,21 +159,21 @@ _groq_keys = GroqKeyManager()
 _PROVIDER_CHAINS: dict[ModelTier, list[dict]] = {
     ModelTier.CHEAP: [
         {
-            "model": "groq/llama-3.1-8b-instant",
-            "provider": "groq",
+            "model": "gemini/gemini-3.6-flash",
+            "provider": "gemini",
             "max_tokens": 2048,
             "temperature": 0.1,
         },
         {
-            "model": "gemini/gemini-2.0-flash",
-            "provider": "gemini",
+            "model": "groq/llama3-8b-8192",
+            "provider": "groq",
             "max_tokens": 2048,
             "temperature": 0.1,
         },
     ],
     ModelTier.MID: [
         {
-            "model": "gemini/gemini-2.0-flash",
+            "model": "gemini/gemini-3.6-flash",
             "provider": "gemini",
             "max_tokens": 4096,
             "temperature": 0.1,
@@ -193,7 +193,7 @@ _PROVIDER_CHAINS: dict[ModelTier, list[dict]] = {
             "temperature": 0.2,
         },
         {
-            "model": "gemini/gemini-2.0-flash",
+            "model": "gemini/gemini-3.6-flash",
             "provider": "gemini",
             "max_tokens": 8192,
             "temperature": 0.2,

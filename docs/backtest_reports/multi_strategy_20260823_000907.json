@@ -1,0 +1,101 @@
+{
+  "timestamp": "20260823_000907",
+  "strategies": {
+    "statarb": {
+      "total_return": "26.67%",
+      "annualized_return": "5.43%",
+      "annualized_vol": "6.87%",
+      "sharpe_ratio": 0.79,
+      "sortino_ratio": 1.0098,
+      "max_drawdown": "9.56%",
+      "calmar_ratio": 0.568,
+      "win_rate": "48.4%",
+      "skewness": -1.0984,
+      "kurtosis": 17.5159,
+      "n_trading_days": 1238,
+      "n_years": 4.91
+    },
+    "factors": {
+      "total_return": "15.14%",
+      "annualized_return": "3.08%",
+      "annualized_vol": "12.27%",
+      "sharpe_ratio": 0.2512,
+      "sortino_ratio": 0.3195,
+      "max_drawdown": "29.33%",
+      "calmar_ratio": 0.1051,
+      "win_rate": "38.3%",
+      "skewness": -0.0276,
+      "kurtosis": 8.0076,
+      "n_trading_days": 1238,
+      "n_years": 4.91
+    },
+    "momentum": {
+      "total_return": "16.10%",
+      "annualized_return": "3.28%",
+      "annualized_vol": "11.61%",
+      "sharpe_ratio": 0.2824,
+      "sortino_ratio": 0.3226,
+      "max_drawdown": "24.84%",
+      "calmar_ratio": 0.1319,
+      "win_rate": "45.2%",
+      "skewness": -0.8664,
+      "kurtosis": 10.049,
+      "n_trading_days": 1238,
+      "n_years": 4.91
+    },
+    "mean_reversion": {
+      "total_return": "-94.29%",
+      "annualized_return": "-19.19%",
+      "annualized_vol": "16.49%",
+      "sharpe_ratio": -1.1637,
+      "sortino_ratio": -1.5747,
+      "max_drawdown": "99.61%",
+      "calmar_ratio": -0.1927,
+      "win_rate": "43.0%",
+      "skewness": -0.2701,
+      "kurtosis": 7.8828,
+      "n_trading_days": 1238,
+      "n_years": 4.91
+    }
+  },
+  "portfolio": {
+    "total_return": "54.80%",
+    "annualized_return": "11.16%",
+    "annualized_vol": "12.21%",
+    "sharpe_ratio": 0.9134,
+    "sortino_ratio": 1.3293,
+    "max_drawdown": "20.37%",
+    "calmar_ratio": 0.5477,
+    "win_rate": "48.7%",
+    "skewness": -0.1,
+    "kurtosis": 5.8081,
+    "n_trading_days": 1238,
+    "n_years": 4.91
+  },
+  "correlation_matrix": {
+    "statarb": {
+      "statarb": 1.0,
+      "factors": -0.12117680806193565,
+      "momentum": 0.22594705008346214,
+      "mean_reversion": 0.03159494664305232
+    },
+    "factors": {
+      "statarb": -0.12117680806193565,
+      "factors": 1.0,
+      "momentum": -0.05409994111032697,
+      "mean_reversion": -0.05571168111739143
+    },
+    "momentum": {
+      "statarb": 0.22594705008346214,
+      "factors": -0.05409994111032697,
+      "momentum": 1.0,
+      "mean_reversion": 0.031254564654979486
+    },
+    "mean_reversion": {
+      "statarb": 0.03159494664305232,
+      "factors": -0.05571168111739143,
+      "momentum": 0.031254564654979486,
+      "mean_reversion": 1.0
+    }
+  }
+}

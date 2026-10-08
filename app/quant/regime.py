@@ -161,6 +161,12 @@ class RegimeDetector:
 
         try:
             from hmmlearn.hmm import GaussianHMM
+            from sklearn.preprocessing import StandardScaler
+
+            # Scale features so that K-Means initialization doesn't ignore the 'return' feature
+            # due to 'volatility' having a much larger variance.
+            self._scaler = StandardScaler()
+            X_scaled = self._scaler.fit_transform(features.values)
 
             self._model = GaussianHMM(
                 n_components=self.n_states,
@@ -169,8 +175,7 @@ class RegimeDetector:
                 random_state=self.random_state,
             )
 
-            X = features.values
-            self._model.fit(X)
+            self._model.fit(X_scaled)
 
             # Label states by mean return (highest = BULL, lowest = BEAR)
             self._label_states()
@@ -178,7 +183,7 @@ class RegimeDetector:
 
             logger.info(
                 "HMM fitted: %d observations, %d states, log-likelihood=%.2f",
-                len(features), self.n_states, self._model.score(X),
+                len(features), self.n_states, self._model.score(X_scaled),
             )
             return True
 
@@ -215,7 +220,11 @@ class RegimeDetector:
 
     # ── Prediction ──────────────────────────────────────────────────────
 
-    def predict(self, prices: pd.Series, min_regime_days: int = 5) -> pd.Series:
+    def predict(
+        self,
+        prices: pd.Series,
+        min_regime_days: int = 5,
+    ) -> pd.Series:
         """
         Predict regime states for a price series using Viterbi decoding.
 
@@ -246,34 +255,14 @@ class RegimeDetector:
             )
 
         try:
-            hidden_states = self._model.predict(features.values)
+            X_scaled = self._scaler.transform(features.values)
+            hidden_states = self._model.predict(X_scaled)
 
             # Map integer states to labels
             raw_labels = [self._state_labels.get(s, RegimeState.UNKNOWN) for s in hidden_states]
 
-            # ── Minimum duration filter ─────────────────────────────
-            # Suppress regime changes that last fewer than min_regime_days.
-            # This prevents the HMM from oscillating between states daily.
-            filtered = list(raw_labels)
-            if min_regime_days > 1 and len(filtered) > min_regime_days:
-                i = 0
-                while i < len(filtered):
-                    # Find run of same regime
-                    j = i + 1
-                    while j < len(filtered) and filtered[j] == filtered[i]:
-                        j += 1
-                    run_len = j - i
-
-                    # If run is too short and not at edges, merge with previous regime
-                    if run_len < min_regime_days and i > 0:
-                        prev_regime = filtered[i - 1]
-                        for k in range(i, j):
-                            filtered[k] = prev_regime
-
-                    i = j
-
             labeled = pd.Series(
-                filtered,
+                raw_labels,
                 index=features.index,
                 dtype=object,
                 name="regime",
@@ -312,8 +301,10 @@ class RegimeDetector:
 
         stats = {}
         for state_idx, label in self._state_labels.items():
-            mean_ret = self._model.means_[state_idx, 0]
-            mean_vol = self._model.means_[state_idx, 1]
+            mean_scaled = self._model.means_[state_idx]
+            mean_unscaled = self._scaler.inverse_transform([mean_scaled])[0]
+            mean_ret = mean_unscaled[0]
+            mean_vol = mean_unscaled[1]
 
             # Annualize: daily features × √252
             ann_ret = mean_ret * 252 * 100  # approximate annualized %
