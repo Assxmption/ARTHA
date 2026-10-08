@@ -10,6 +10,7 @@ import Watchlist from './pages/Watchlist';
 import NewsSentiment from './pages/NewsSentiment';
 import Simulator from './pages/Simulator';
 import PaperTrading from './pages/PaperTrading';
+import Screener from './pages/Screener';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -115,6 +116,13 @@ const AppRoutes = () => {
       <Route path="/paper-trading" element={
         <ProtectedRoute>
           <Shell><PaperTrading /></Shell>
+        </ProtectedRoute>
+      } />
+
+      {/* Stock Screener */}
+      <Route path="/screener" element={
+        <ProtectedRoute>
+          <Shell><Screener /></Shell>
         </ProtectedRoute>
       } />
     </Routes>

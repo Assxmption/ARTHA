@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, Eye, Activity, FileText, Newspaper, BarChart2, Database, Zap } from 'lucide-react';
+import { Home, Eye, Activity, FileText, Newspaper, BarChart2, Database, Zap, Filter } from 'lucide-react';
 
 export default function Sidebar({ mobileOpen, setMobileOpen, desktopOpen }) {
   const navigate = useNavigate();
@@ -8,6 +8,7 @@ export default function Sidebar({ mobileOpen, setMobileOpen, desktopOpen }) {
   const navItems = [
     { label: 'Overview', path: '/home', icon: <Home size={16} /> },
     { label: 'Watchlist', path: '/watchlist', icon: <Eye size={16} /> },
+    { label: 'Screener', path: '/screener', icon: <Filter size={16} /> },
     { label: 'Quant Signals', path: '/signals', icon: <Activity size={16} /> },
     { label: 'Fundamentals', path: '/fundamentals/RELIANCE', icon: <FileText size={16} /> },
     { label: 'Sentiment', path: '/news/RELIANCE', icon: <Newspaper size={16} /> },
