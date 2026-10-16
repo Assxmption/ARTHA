@@ -2,15 +2,35 @@ name: Keep Supabase Alive
 
 on:
   schedule:
-    # Runs every day at midnight (00:00 UTC) to prevent the project from pausing
-    - cron: '0 0 * * *'
+    # Runs twice daily (00:00 and 12:00 UTC) to ensure the 7-day inactivity counter is reset
+    - cron: '0 0,12 * * *'
   workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:
   ping-supabase:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase API
+      - name: Ping Supabase Database and Auth APIs
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0YWpzcGRna3RmeXJyd3l3bGttIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk2MjAwMjAsImV4cCI6MjEwNTE5NjAyMH0.-USyhdVHeg1azUFxevtr9ZjdnYIOzqbNKRDF6s3Racw' }}
         run: |
-          echo "Pinging Supabase to prevent sleep..."
-          curl -s -I -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" "https://etajspdgktfyrrwywlkm.supabase.co/rest/v1/"
+          echo "Pinging Supabase Database API (querying watchlists table to reset Postgres inactivity timer)..."
+          DB_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --retry 3 --retry-delay 5 --retry-connrefused \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            "https://etajspdgktfyrrwywlkm.supabase.co/rest/v1/watchlists?select=id&limit=1")
+          echo "Database ping status: ${DB_STATUS}"
+
+          echo "Pinging Supabase Auth API..."
+          AUTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --retry 3 --retry-delay 5 --retry-connrefused \
+            -H "apikey: ${SUPABASE_KEY}" \
+            "https://etajspdgktfyrrwywlkm.supabase.co/auth/v1/health")
+          echo "Auth health ping status: ${AUTH_STATUS}"
+
+          if [ "$DB_STATUS" != "200" ] && [ "$AUTH_STATUS" != "200" ]; then
+            echo "ERROR: Both database and auth pings failed (DB: ${DB_STATUS}, Auth: ${AUTH_STATUS})"
+            exit 1
+          fi
+          echo "Supabase successfully pinged and active!"
