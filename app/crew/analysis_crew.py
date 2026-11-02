@@ -36,6 +36,7 @@ from app.agents.fundamentals_agent import (
 )
 from app.agents.quant_narrator_agent import run_quant_narration
 from app.agents.risk_agent import run_risk_checks, run_risk_narration
+from app.agents.sentiment_agent import run_sentiment_analysis, run_sentiment_narration
 from app.agents.writer_agent import build_writer_context, check_citations
 from app.factstore.schemas import NarrativeFact, Severity
 from app.factstore.store import FactStore
@@ -139,6 +140,34 @@ class AnalysisCrew:
         # The quant engine is an independent automated worker (see app/quant/simulator.py).
         # Fundamental analysis is purely about financial statements + market data.
 
+        # 1b. Sentiment analysis (deterministic FinBERT+VADER — no LLM tokens)
+        try:
+            progress("stage1", "📰 Scoring news sentiment (FinBERT + VADER ensemble)...")
+            sentiment_signal = run_sentiment_analysis(
+                job_id=job_id,
+                store=self.store,
+                symbol=symbol,
+            )
+            stages["sentiment"] = {
+                "status": "ok",
+                "headline_count": sentiment_signal.headline_count,
+                "score": round(sentiment_signal.sentiment_score, 4),
+                "event_type": sentiment_signal.event_type.value if sentiment_signal.event_type else None,
+            }
+            label = (
+                "BULLISH" if sentiment_signal.sentiment_score > 0.1
+                else "BEARISH" if sentiment_signal.sentiment_score < -0.1
+                else "NEUTRAL"
+            )
+            progress(
+                "stage1",
+                f"✓ Sentiment: {label} (score={sentiment_signal.sentiment_score:+.3f}, "
+                f"{sentiment_signal.headline_count} headlines)",
+            )
+        except Exception as e:
+            stages["sentiment"] = {"status": "error", "error": str(e)}
+            progress("stage1", f"⚠ Sentiment scoring failed: {e}")
+
         # ════════════════════════════════════════════════════════════════
         # STAGE 2: Agent Reasoning (Quant Narrator + Risk)
         # ════════════════════════════════════════════════════════════════
@@ -162,6 +191,18 @@ class AnalysisCrew:
 
         # NOTE: Quant narration removed — quant engine is independent.
         # The fundamental report narrates financial data only.
+
+        # 2b. Sentiment narration (LLM)
+        if not skip_llm:
+            try:
+                sentiment_narrative = run_sentiment_narration(
+                    job_id=job_id, store=self.store, symbol=symbol
+                )
+                stages["sentiment_narration"] = {"status": "ok"}
+                progress("stage2", "✓ Sentiment narrative written")
+            except Exception as e:
+                stages["sentiment_narration"] = {"status": "error", "error": str(e)}
+                progress("stage2", f"⚠ Sentiment narration failed: {e}")
 
         # 2c. Risk checks (deterministic + LLM narration)
         try:
@@ -428,6 +469,7 @@ def _build_fallback_report(job_id: str, store: FactStore, symbol: str) -> str:
         FactType,
         FundamentalRow,
         NarrativeFact,
+        NewsSignal,
         QuantSignal,
         RiskFlag,
     )
@@ -454,6 +496,22 @@ def _build_fallback_report(job_id: str, store: FactStore, symbol: str) -> str:
                 f"- **{q.signal_type.value}** ({q.symbol_or_pair}): "
                 f"value={q.value:.4f}, Sharpe={q.backtest_sharpe or 'N/A'}"
             )
+
+    # News sentiment
+    news_facts = store.get_facts_by_type(job_id, FactType.NEWS_SIGNAL)
+    if news_facts:
+        lines.append("\n### News Sentiment\n")
+        for n in news_facts:
+            if isinstance(n, NewsSignal):
+                direction = "🟢 BULLISH" if n.sentiment_score > 0.1 else "🔴 BEARISH" if n.sentiment_score < -0.1 else "⚪ NEUTRAL"
+                lines.append(
+                    f"- **{n.symbol_or_commodity}**: {direction} "
+                    f"(score={n.sentiment_score:+.4f}, {n.headline_count} headlines, "
+                    f"event={n.event_type.value if n.event_type else 'general'})"
+                )
+                if n.headlines_sample:
+                    for h in n.headlines_sample[:3]:
+                        lines.append(f"  - {h}")
 
     # Risk flags
     risk_facts = store.get_facts_by_type(job_id, FactType.RISK_FLAG)

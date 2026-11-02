@@ -193,13 +193,18 @@ def generate_pca_signals(
     # Cumulative residuals — the "spread" that should mean-revert
     cum_residuals = residuals.cumsum()
 
-    # Rolling z-score of cumulative residuals
-    rolling_mean = cum_residuals.rolling(lookback, min_periods=max(lookback // 2, 5)).mean()
-    rolling_std = cum_residuals.rolling(lookback, min_periods=max(lookback // 2, 5)).std()
-
-    # Avoid division by zero: set std=NaN where it's too small
-    rolling_std = rolling_std.where(rolling_std > 1e-10, np.nan)
-    z_scores = (cum_residuals - rolling_mean) / rolling_std
+    # Robust z-score of cumulative residuals (MAD-based with Winsorisation)
+    # Replaces naive mean/std which was both outlier-sensitive and
+    # produced z-explosion during regime transitions.
+    from app.quant.robust_outliers import robust_zscore_rolling
+    z_scores = cum_residuals.apply(
+        lambda col: robust_zscore_rolling(
+            col,
+            lookback=lookback,
+            min_periods=max(lookback // 2, 5),
+            winsor_z=6.0,
+        )
+    )
 
     # Generate signals with hysteresis (entry/exit thresholds differ)
     signals = pd.DataFrame(0.0, index=residuals.index, columns=residuals.columns)
