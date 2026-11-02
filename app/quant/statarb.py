@@ -324,15 +324,20 @@ def generate_pair_signals(
     common = aligned.index.intersection(hr.index)
     spread = aligned.loc[common, "a"] - hr.loc[common] * aligned.loc[common, "b"]
 
-    # Rolling z-score
+    # Robust z-score (EWM-median/MAD hybrid with Winsorisation)
+    # Replaces naive mean/std which was both outlier-sensitive and
+    # slow to adapt to regime changes.
+    from app.quant.robust_outliers import statarb_zscore
+    z_score = statarb_zscore(
+        spread, lookback=lookback, min_periods=lookback // 2,
+        winsor_z=z_stop + 1.0,  # Allow z slightly beyond stop level
+    ).dropna()
+
+    # We still need spread_mean and spread_std for the PairSignal dataclass.
+    # Compute them as rolling statistics (used for reporting, not trading logic).
     spread_mean = spread.rolling(window=lookback).mean()
     spread_std = spread.rolling(window=lookback).std()
-
-    # Avoid division by zero
     spread_std = spread_std.replace(0, np.nan)
-
-    z_score = (spread - spread_mean) / spread_std
-    z_score = z_score.dropna()
 
     # Generate signals
     signals: list[PairSignal] = []

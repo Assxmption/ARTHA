@@ -87,13 +87,13 @@ def _safe_div(a: float, b: float, default: float = 0.0) -> float:
 
 
 def _mad_zscore(values: np.ndarray) -> np.ndarray:
-    """Cross-sectional MAD-robust z-score."""
-    if len(values) < 3:
-        return np.zeros_like(values)
-    median = np.nanmedian(values)
-    mad = np.nanmedian(np.abs(values - median))
-    scale = 1.4826 * mad if mad > 1e-10 else max(np.nanstd(values), 1e-10)
-    return (values - median) / scale
+    """Cross-sectional MAD-robust z-score.
+
+    Delegates to the centralised robust_outliers module.
+    Kept as a thin wrapper to avoid breaking call sites.
+    """
+    from app.quant.robust_outliers import robust_zscore_cross_sectional
+    return robust_zscore_cross_sectional(values, winsor_z=None)
 
 
 # ── Signal Computation Functions ──────────────────────────────────────────────

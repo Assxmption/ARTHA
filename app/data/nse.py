@@ -186,18 +186,51 @@ def fetch_nse_ohlcv(
     df = df.sort_values("date").reset_index(drop=True)
 
     # ── Flag outliers at ingestion (rule 7a) ────────────────────────────
-    if len(df) >= 3:
+    # Uses multi-signal detection: MAD z-score + volume cross-check +
+    # price-range consistency.  Classifies as BAD_DATA / CIRCUIT_HIT /
+    # GENUINE_MOVE.  Nothing is silently dropped (rule 7b).
+    if len(df) >= 10:
+        from app.quant.robust_outliers import flag_bad_data, detect_circuit_halts, OutlierType
+        outlier_flags = flag_bad_data(df, symbol)
+        if outlier_flags:
+            bad = [f for f in outlier_flags if f.classification == OutlierType.BAD_DATA]
+            circuit = [f for f in outlier_flags if f.classification == OutlierType.CIRCUIT_HIT]
+            genuine = [f for f in outlier_flags if f.classification == OutlierType.GENUINE_MOVE]
+            if bad:
+                logger.warning(
+                    "BAD DATA flagged for %s (%d points, NOT dropped — review manually): %s",
+                    symbol, len(bad),
+                    [(str(f.date.date()), f.evidence) for f in bad[:3]],
+                )
+            if circuit:
+                logger.info(
+                    "Circuit-limit halts detected for %s: %d days",
+                    symbol, len(circuit),
+                )
+            if genuine:
+                logger.info(
+                    "Genuine large moves for %s: %d (preserved as signal)",
+                    symbol, len(genuine),
+                )
+
+        # Also mark circuit-halt days in the DataFrame for downstream use
+        circuit_days = detect_circuit_halts(df)
+        if circuit_days.any():
+            df["circuit_halt"] = circuit_days
+            logger.info(
+                "Marked %d circuit-halt days for %s",
+                circuit_days.sum(), symbol,
+            )
+    elif len(df) >= 3:
+        # Fallback: use simple MAD for very short series
         returns = df["close"].pct_change().dropna()
         flags = flag_outliers_mad(returns)
         n_flagged = flags.sum()
         if n_flagged > 0:
-            flagged_dates = df.loc[flags[flags].index + 1, "date"].tolist()
             logger.warning(
                 "MAD outlier detection flagged %d observations for %s "
-                "(NOT dropped — review manually): %s",
-                n_flagged,
-                symbol,
-                flagged_dates[:5],
+                "(NOT dropped — review manually)",
+                n_flagged, symbol,
             )
 
     # ── Cache ───────────────────────────────────────────────────────────
