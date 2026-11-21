@@ -247,17 +247,77 @@ class TestComputeTargets:
 class TestRegimeAndHedge:
     """Test regime detection and hedge ratio logic."""
 
-    def test_hedge_ratios_are_conservative(self):
-        """Hedge ratios should match the documented conservative priors."""
-        assert LiveStrategyEngine._get_hedge_ratio("BULL") == 0.30
-        assert LiveStrategyEngine._get_hedge_ratio("BEAR") == 0.70
-        assert LiveStrategyEngine._get_hedge_ratio("SIDEWAYS") == 0.50
-        assert LiveStrategyEngine._get_hedge_ratio("UNKNOWN") == 0.50
+    def test_hedge_ratios_are_conservative(self, engine):
+        """Hedge ratios should match the documented conservative priors (rule-based)."""
+        assert engine._get_hedge_ratio("BULL") == 0.30
+        assert engine._get_hedge_ratio("BEAR") == 0.70
+        assert engine._get_hedge_ratio("SIDEWAYS") == 0.50
+        assert engine._get_hedge_ratio("UNKNOWN") == 0.50
 
     def test_regime_detected_after_init(self, engine, prices, volumes):
         """After initialization, regime should be set."""
         engine.initialize(prices=prices, volumes=volumes)
         assert engine.current_regime != "UNKNOWN"
+
+
+class TestRLAllocatorIntegration:
+    """Test RL allocator integration with LiveStrategyEngine."""
+
+    def test_engine_creates_rl_allocator_when_enabled(self, temp_model_dir):
+        """When use_rl_allocator=True, the RL allocator should be instantiated."""
+        engine = LiveStrategyEngine(
+            symbols=["SYM00"],
+            model_dir=temp_model_dir,
+            use_rl_allocator=True,
+        )
+        assert engine._use_rl_allocator is True
+        assert engine._rl_allocator is not None
+
+    def test_engine_no_rl_allocator_by_default(self, engine):
+        """Default engine should not have RL allocator."""
+        assert engine._use_rl_allocator is False
+        assert engine._rl_allocator is None
+
+    def test_rl_hedge_ratio_falls_back_untrained(self, temp_model_dir):
+        """Untrained RL allocator should produce rule-based fallback values."""
+        engine = LiveStrategyEngine(
+            symbols=["SYM00"],
+            model_dir=temp_model_dir,
+            use_rl_allocator=True,
+        )
+        # Untrained RL falls back to rule-based: BULL → 0.30, BEAR → 0.70
+        ratio_bull = engine._get_hedge_ratio("BULL")
+        ratio_bear = engine._get_hedge_ratio("BEAR")
+        assert ratio_bull == 0.30
+        assert ratio_bear == 0.70
+
+    def test_rl_build_state_returns_valid_state(self, temp_model_dir, prices, volumes):
+        """_build_rl_state should return a valid RLState."""
+        from app.quant.rl_allocator import RLState
+        engine = LiveStrategyEngine(
+            symbols=list(prices.keys()),
+            model_dir=temp_model_dir,
+            use_rl_allocator=True,
+        )
+        engine.initialize(prices=prices, volumes=volumes)
+        state = engine._build_rl_state("BULL")
+        assert isinstance(state, RLState)
+        assert state.regime_bull == 1.0
+        assert state.regime_bear == 0.0
+        assert state.regime_sideways == 0.0
+
+    def test_rl_state_with_no_history(self, temp_model_dir):
+        """With no historical data, state features should be neutral defaults."""
+        from app.quant.rl_allocator import RLState
+        engine = LiveStrategyEngine(
+            symbols=["SYM00"],
+            model_dir=temp_model_dir,
+            use_rl_allocator=True,
+        )
+        state = engine._build_rl_state("SIDEWAYS")
+        assert state.rolling_sharpe_20d == 0.0
+        assert state.rolling_vol_20d == 0.0
+        assert state.momentum_20d == 0.0
 
 
 class TestCheckpointing:
