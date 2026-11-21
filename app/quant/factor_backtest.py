@@ -25,12 +25,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 import pandas as pd
 
 from app.quant.factors import compute_composite_alpha, FactorExposure
+from app.quant.backtest import compute_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,7 @@ class FactorBacktestResult:
 def backtest_factor_model(
     price_data: dict[str, pd.DataFrame],
     fundamentals: Optional[dict[str, dict]] = None,
+    fundamentals_by_date: Optional[Callable[[pd.Timestamp], dict[str, dict]]] = None,
     rebalance_days: int = 21,
     lookback_momentum: int = 252,
     quintile_pct: float = 0.20,
@@ -75,7 +77,10 @@ def backtest_factor_model(
     price_data : dict[str, pd.DataFrame]
         Symbol → DataFrame with OHLCV columns ('Close', 'Volume', etc.).
     fundamentals : dict, optional
-        Symbol → dict with fundamental metrics (pe, pb, roe, etc.).
+        Current snapshot for descriptive use only. Static fundamentals are
+        rejected in historical backtests; use ``fundamentals_by_date``.
+    fundamentals_by_date : callable, optional
+        Returns a point-in-time snapshot for each rebalance date.
     rebalance_days : int
         Days between rebalances (21 = monthly).
     lookback_momentum : int
@@ -90,6 +95,11 @@ def backtest_factor_model(
     FactorBacktestResult
     """
     symbols = list(price_data.keys())
+    if fundamentals is not None and fundamentals_by_date is None:
+        raise ValueError(
+            "Static fundamentals are not allowed in historical backtests; "
+            "provide fundamentals_by_date with publication-lagged values"
+        )
     if len(symbols) < min_stocks:
         logger.warning("Universe too small: %d stocks < %d minimum", len(symbols), min_stocks)
         return _empty_result()
@@ -145,9 +155,13 @@ def backtest_factor_model(
             continue
 
         # Compute factor scores using the actual factors.py API
+        as_of_fundamentals = (
+            fundamentals_by_date(pd.Timestamp(dates[rebal_idx]))
+            if fundamentals_by_date is not None else None
+        )
         exposures = compute_composite_alpha(
             price_data=price_slices,
-            fundamentals=fundamentals,
+            fundamentals=as_of_fundamentals,
         )
 
         if len(exposures) < min_stocks:
@@ -218,28 +232,13 @@ def backtest_factor_model(
 
         n_rebalances += 1
 
-    # Compute metrics
-    daily_arr = daily_rets.values
-    daily_arr = daily_arr[~np.isnan(daily_arr)]
-
-    if len(daily_arr) < 20:
+    # Compute metrics from the compounded wealth curve used by the canonical
+    # backtest implementation. The previous arithmetic-sum/drawdown path
+    # overstated returns and produced a non-comparable drawdown.
+    daily_rets = daily_rets.dropna()
+    if len(daily_rets) < 20:
         return _empty_result()
-
-    total_ret = float(np.sum(daily_arr))
-    n_years = max(len(daily_arr) / 252, 0.01)
-    ann_ret = total_ret / n_years
-
-    daily_std = float(np.std(daily_arr)) if len(daily_arr) > 1 else 1.0
-    sharpe = (np.mean(daily_arr) / max(daily_std, 1e-8)) * np.sqrt(252)
-
-    down = daily_arr[daily_arr < 0]
-    down_std = float(np.std(down)) if len(down) > 1 else daily_std
-    sortino = (np.mean(daily_arr) / max(down_std, 1e-8)) * np.sqrt(252)
-
-    cum = np.cumsum(daily_arr)
-    peak = np.maximum.accumulate(cum)
-    dd = peak - cum
-    max_dd = float(np.max(dd)) if len(dd) > 0 else 0.0
+    metrics = compute_metrics(daily_rets)
 
     avg_turnover = float(np.mean(turnover_pcts)) if turnover_pcts else 0.0
 
@@ -248,18 +247,19 @@ def backtest_factor_model(
 
     logger.info(
         "Factor backtest: %d rebalances, Sharpe=%.3f, Return=%.2f%%, MaxDD=%.2f%%",
-        n_rebalances, sharpe, ann_ret * 100, max_dd * 100,
+        n_rebalances, metrics.sharpe_ratio, metrics.annualized_return * 100,
+        metrics.max_drawdown * 100,
     )
 
     return FactorBacktestResult(
         n_rebalances=n_rebalances,
         n_stocks_long=n_long,
         n_stocks_short=n_short,
-        total_return=round(total_ret, 6),
-        annualized_return=round(ann_ret, 6),
-        sharpe_ratio=round(float(sharpe), 4),
-        sortino_ratio=round(float(sortino), 4),
-        max_drawdown=round(max_dd, 6),
+        total_return=metrics.total_return,
+        annualized_return=metrics.annualized_return,
+        sharpe_ratio=metrics.sharpe_ratio,
+        sortino_ratio=metrics.sortino_ratio,
+        max_drawdown=metrics.max_drawdown,
         avg_monthly_turnover=round(avg_turnover, 4),
         daily_returns=daily_rets,
         long_symbols=long_history,

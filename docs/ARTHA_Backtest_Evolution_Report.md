@@ -3,13 +3,26 @@
 **Generated Date:** September 13, 2026  
 **Focus:** Progression from Single-Factor to Institutional-Grade Multi-Strategy
 
+> **SUPERSEDED / NOT VALIDATION EVIDENCE**
+>
+> This document summarises legacy full-sample experimental artifacts. The
+> figures below predate the current causal, point-in-time, and canonical
+> validation controls. They must not be described as out-of-sample performance,
+> validated signals, or evidence for the 1.3 Sharpe / approximately 25% CAGR
+> objective. The current real-data sleeve matrix is recorded in
+> `docs/backtest_reports/real_sleeve_matrix_10yr_20261104_034423.json`.
+
 ---
 
 ## 1. Executive Summary
 
-The ARTHA quantitative engine has undergone a massive evolution over the past few months. What began as a simple factor-based ranking system (v1-v3) has been transformed into a fully operational, deterministic, institutional-grade multi-strategy alpha engine (v5.x). 
+The ARTHA quantitative engine has undergone several experimental iterations.
+The legacy v5.x artifacts are retained for research history, while the current
+engine is being rebuilt behind causal data and validation boundaries.
 
-This report details the architectural leap in the backtest results, showcasing how we moved from unstable, unvalidated single-stock returns to a robust, volatility-targeted, and fully hedged portfolio that boasts a **Sharpe Ratio near 1.0 and a Sortino Ratio exceeding 1.3** across a 12-year out-of-sample backtest. We will also dive into the signal anatomy and demonstrate how our AI Narrator Agent translates these quantitative metrics into actionable, human-readable insights.
+This report documents legacy backtest output. It does not establish a robust or
+validated portfolio result; current validation work has found leakage,
+survivorship, metric, and evaluated-sample selection issues in these paths.
 
 ---
 
@@ -29,11 +42,13 @@ In early July, the engine primarily relied on simple factor rankings (Value, Mom
 The latest backtest runs (e.g., `multi_strategy_20260902_114609.json`) represent a paradigm shift. We transitioned to a multi-agent, multi-strategy approach inspired by the Medallion fund's statistical arbitrage and Hidden Markov Model (HMM) regime detection.
 
 *   **Architecture:** Ensemble of 6 distinct alpha sub-strategies (Factors, Momentum, Mean Reversion, Trend Following, Short-Term Reversal, ML Alpha) dynamically weighted and risk-managed.
-*   **Validation:** Strict walk-forward out-of-sample validation gates are applied before any signal is passed to the AI narrator.
+*   **Validation:** Legacy reports used validation-like labels, but they do not
+    satisfy the current canonical walk-forward evidence contract.
 *   **Hedging & Volatility Targeting:** Implementation of a `hedged_portfolio` and a volatility-targeted `hedged_vt` portfolio.
 
-#### The Improvement (Delta)
-The improvement is staggering. By moving from a single-factor unhedged model to a diversified multi-strategy ensemble:
+#### Legacy comparison (not a promotion result)
+The reported legacy comparison is retained only to guide investigations. It
+cannot be used to claim that diversification produced a validated improvement:
 - **Sharpe Ratio** improved from ~0.27 to **0.97** (Portfolio) and **0.96** (Hedged VT).
 - **Sortino Ratio** reached an impressive **1.32** on the Vol-Targeted Hedged portfolio, indicating exceptional downside protection.
 - **Annualized Returns** stabilized at roughly **11.26%** (Base Portfolio) to **14.80%** (Hedged VT), with highly controlled volatility.
@@ -102,7 +117,9 @@ The ARTHA architecture dictates that **LLMs never compute math**. All quantitati
   "source": "multi_strategy_engine"
 }
 ```
-*Notice that `validated` is explicitly set to `true`. Unvalidated signals are silently dropped before they ever reach the reporting agents.*
+This is an illustrative legacy object, not an authoritative signal. Current
+schema and injector controls reject manually supplied validation claims without
+resolvable canonical evidence.
 
 ---
 
@@ -128,7 +145,10 @@ Crucially, it adheres strictly to the repo's architectural rules: it does not in
 
 ## 7. Conclusion & Next Steps
 
-The transformation from the early July models to the current V5.x architecture is a masterclass in quantitative system design. By enforcing strict separation of concerns—deterministic math in Python/Pandas, and pure narrative synthesis in the LLM—ARTHA has avoided the token-budget collapse and math hallucinations that plague naive AI-trading bots.
+The legacy experiments motivated the current rebuild. Deterministic computation,
+causal replay, point-in-time data, and canonical validation are now required;
+the historical figures above remain non-authoritative until reproduced through
+those controls.
 
 **Next Steps:**
 1.  **Regime Detector Tuning:** Ensure the HMM regime detector consistently flags BULL/BEAR states to feed into dynamic position sizing, minimizing the "unknown regime" edge case seen in recent reports.

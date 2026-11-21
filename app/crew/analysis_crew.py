@@ -30,18 +30,17 @@ from typing import Callable, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from app.agents.fundamentals_agent import (
-    format_facts_for_narration,
-    run_fundamentals_analysis,
-)
-from app.agents.quant_narrator_agent import run_quant_narration
+from app.agents.fundamentals_agent import run_fundamentals_analysis
 from app.agents.risk_agent import run_risk_checks, run_risk_narration
 from app.agents.sentiment_agent import run_sentiment_analysis, run_sentiment_narration
-from app.agents.writer_agent import build_writer_context, check_citations
-from app.factstore.schemas import NarrativeFact, Severity
+from app.agents.writer_agent import (
+    build_writer_context,
+    check_citations,
+    persist_report_citations,
+)
+from app.factstore.schemas import FactType, NarrativeFact, Severity
 from app.factstore.store import FactStore
 from app.llm.router import get_cheap_llm, get_mid_llm, get_deep_llm
-from app.quant.signal_injector import inject_backtest_signals
 
 logging.basicConfig(
     level=logging.INFO,
@@ -99,7 +98,43 @@ class AnalysisCrew:
 
         symbol = symbol.upper().strip()
         started_at = time.time()
-        stages = {}
+        previous_state = self.store.get_job_state(job_id)
+        previous_stages = (previous_state or {}).get("stages", {})
+        stages = dict(previous_stages)
+        attempt_count = int((previous_state or {}).get("attempt_count", 0)) + 1
+
+        # A completed job is immutable from the orchestrator's perspective.
+        # Returning its stored report makes repeated API delivery idempotent and
+        # avoids duplicate Fact Store writes after a worker restart.
+        previous_report = REPORTS_DIR / f"{job_id}.md"
+        if (
+            previous_state
+            and previous_state.get("status") == "completed"
+            and previous_report.exists()
+        ):
+            return {
+                "job_id": job_id,
+                "symbol": previous_state.get("symbol", symbol),
+                "status": "completed",
+                "report": previous_report.read_text(encoding="utf-8"),
+                "report_file": str(previous_report),
+                "stages": stages,
+                "duration_seconds": 0.0,
+                "resumed": True,
+            }
+
+        def checkpoint(status: str, current_stage: Optional[str] = None, error: Optional[str] = None):
+            self.store.upsert_job(
+                job_id=job_id,
+                symbol=symbol,
+                status=status,
+                current_stage=current_stage,
+                stages=stages,
+                error=error,
+                attempt_count=attempt_count,
+            )
+
+        checkpoint("running", "init")
 
         def progress(stage: str, msg: str):
             logger.info("[%s] %s", stage, msg)
@@ -114,59 +149,69 @@ class AnalysisCrew:
         progress("stage1", "📊 Collecting fundamentals and quant signals...")
 
         # 1a. Fundamentals (financial statements + market data)
-        try:
-            fund_result = run_fundamentals_analysis(
-                symbol=symbol,
-                job_id=job_id,
-                store=self.store,
-                start_fy=2022,
-            )
-            fund_count = len(fund_result.get("facts", []))
-            stmt_count = fund_result.get("statement_count", 0)
-            mkt_count = fund_result.get("market_count", 0)
-            stages["fundamentals"] = {
-                "status": "ok",
-                "facts_written": fund_count,
-                "statement_metrics": stmt_count,
-                "market_metrics": mkt_count,
-                "fiscal_years": fund_result.get("fiscal_years", []),
-            }
-            progress("stage1", f"✓ {fund_count} facts ({stmt_count} statement + {mkt_count} market)")
-        except Exception as e:
-            stages["fundamentals"] = {"status": "error", "error": str(e)}
-            progress("stage1", f"⚠ Fundamentals failed: {e}")
+        if stages.get("fundamentals", {}).get("status") == "ok":
+            fund_facts = self.store.get_facts_by_type(job_id, FactType.FUNDAMENTAL)
+            fund_result = {"facts": fund_facts}
+            progress("stage1", f"↻ Resumed with {len(fund_facts)} stored fundamentals facts")
+        else:
+            try:
+                fund_result = run_fundamentals_analysis(
+                    symbol=symbol,
+                    job_id=job_id,
+                    store=self.store,
+                    start_fy=2022,
+                )
+                fund_count = len(fund_result.get("facts", []))
+                stmt_count = fund_result.get("statement_count", 0)
+                mkt_count = fund_result.get("market_count", 0)
+                stages["fundamentals"] = {
+                    "status": "ok",
+                    "facts_written": fund_count,
+                    "statement_metrics": stmt_count,
+                    "market_metrics": mkt_count,
+                    "fiscal_years": fund_result.get("fiscal_years", []),
+                }
+                progress("stage1", f"✓ {fund_count} facts ({stmt_count} statement + {mkt_count} market)")
+            except Exception as e:
+                stages["fundamentals"] = {"status": "error", "error": str(e)}
+                progress("stage1", f"⚠ Fundamentals failed: {e}")
+        checkpoint("running", "fundamentals")
 
         # NOTE: Quant signal injection has been REMOVED from the analysis pipeline.
         # The quant engine is an independent automated worker (see app/quant/simulator.py).
         # Fundamental analysis is purely about financial statements + market data.
 
         # 1b. Sentiment analysis (deterministic FinBERT+VADER — no LLM tokens)
-        try:
-            progress("stage1", "📰 Scoring news sentiment (FinBERT + VADER ensemble)...")
-            sentiment_signal = run_sentiment_analysis(
-                job_id=job_id,
-                store=self.store,
-                symbol=symbol,
-            )
-            stages["sentiment"] = {
-                "status": "ok",
-                "headline_count": sentiment_signal.headline_count,
-                "score": round(sentiment_signal.sentiment_score, 4),
-                "event_type": sentiment_signal.event_type.value if sentiment_signal.event_type else None,
-            }
-            label = (
-                "BULLISH" if sentiment_signal.sentiment_score > 0.1
-                else "BEARISH" if sentiment_signal.sentiment_score < -0.1
-                else "NEUTRAL"
-            )
-            progress(
-                "stage1",
-                f"✓ Sentiment: {label} (score={sentiment_signal.sentiment_score:+.3f}, "
-                f"{sentiment_signal.headline_count} headlines)",
-            )
-        except Exception as e:
-            stages["sentiment"] = {"status": "error", "error": str(e)}
-            progress("stage1", f"⚠ Sentiment scoring failed: {e}")
+        if stages.get("sentiment", {}).get("status") == "ok":
+            progress("stage1", "↻ Resumed with stored sentiment facts")
+        else:
+            try:
+                progress("stage1", "📰 Scoring news sentiment (FinBERT + VADER ensemble)...")
+                sentiment_signal = run_sentiment_analysis(
+                    job_id=job_id,
+                    store=self.store,
+                    symbol=symbol,
+                )
+                stages["sentiment"] = {
+                    "status": "ok",
+                    "headline_count": sentiment_signal.headline_count,
+                    "score": round(sentiment_signal.sentiment_score, 4),
+                    "event_type": sentiment_signal.event_type.value if sentiment_signal.event_type else None,
+                }
+                label = (
+                    "BULLISH" if sentiment_signal.sentiment_score > 0.1
+                    else "BEARISH" if sentiment_signal.sentiment_score < -0.1
+                    else "NEUTRAL"
+                )
+                progress(
+                    "stage1",
+                    f"✓ Sentiment: {label} (score={sentiment_signal.sentiment_score:+.3f}, "
+                    f"{sentiment_signal.headline_count} headlines)",
+                )
+            except Exception as e:
+                stages["sentiment"] = {"status": "error", "error": str(e)}
+                progress("stage1", f"⚠ Sentiment scoring failed: {e}")
+        checkpoint("running", "sentiment")
 
         # ════════════════════════════════════════════════════════════════
         # STAGE 2: Agent Reasoning (Quant Narrator + Risk)
@@ -174,7 +219,7 @@ class AnalysisCrew:
         progress("stage2", "🧠 Running agent reasoning...")
 
         # 2a. Fundamentals narration (LLM)
-        if not skip_llm:
+        if not skip_llm and stages.get("fundamentals_narration", {}).get("status") != "ok":
             try:
                 fund_facts = fund_result.get("facts", []) if "fund_result" in dir() else []
                 if fund_facts:
@@ -188,12 +233,14 @@ class AnalysisCrew:
             except Exception as e:
                 stages["fundamentals_narration"] = {"status": "error", "error": str(e)}
                 progress("stage2", f"⚠ Fundamentals narration failed: {e}")
+        elif not skip_llm:
+            progress("stage2", "↻ Resumed with stored fundamentals narrative")
 
         # NOTE: Quant narration removed — quant engine is independent.
         # The fundamental report narrates financial data only.
 
         # 2b. Sentiment narration (LLM)
-        if not skip_llm:
+        if not skip_llm and stages.get("sentiment_narration", {}).get("status") != "ok":
             try:
                 sentiment_narrative = run_sentiment_narration(
                     job_id=job_id, store=self.store, symbol=symbol
@@ -203,14 +250,20 @@ class AnalysisCrew:
             except Exception as e:
                 stages["sentiment_narration"] = {"status": "error", "error": str(e)}
                 progress("stage2", f"⚠ Sentiment narration failed: {e}")
+        elif not skip_llm:
+            progress("stage2", "↻ Resumed with stored sentiment narrative")
 
         # 2c. Risk checks (deterministic + LLM narration)
         try:
-            risk_flags = run_risk_checks(
-                job_id=job_id,
-                store=self.store,
-                symbol=symbol,
-            )
+            if stages.get("risk_checks", {}).get("status") == "ok":
+                risk_flags = self.store.get_facts_by_type(job_id, FactType.RISK_FLAG)
+                progress("stage2", "↻ Resumed with stored risk flags")
+            else:
+                risk_flags = run_risk_checks(
+                    job_id=job_id,
+                    store=self.store,
+                    symbol=symbol,
+                )
             blocks = sum(1 for f in risk_flags if f.severity == Severity.BLOCK)
             warnings = sum(1 for f in risk_flags if f.severity == Severity.WARNING)
             stages["risk_checks"] = {
@@ -221,12 +274,19 @@ class AnalysisCrew:
             }
             progress("stage2", f"✓ Risk: {blocks} blocks, {warnings} warnings")
 
-            if not skip_llm and risk_flags:
+            if (
+                not skip_llm
+                and risk_flags
+                and stages.get("risk_narration", {}).get("status") != "ok"
+            ):
                 risk_narrative = run_risk_narration(job_id, self.store, risk_flags)
                 stages["risk_narration"] = {"status": "ok" if risk_narrative else "skipped"}
+            elif not skip_llm and risk_flags:
+                progress("stage2", "↻ Resumed with stored risk narrative")
         except Exception as e:
             stages["risk_checks"] = {"status": "error", "error": str(e)}
             progress("stage2", f"⚠ Risk checks failed: {e}")
+        checkpoint("running", "risk_checks")
 
         # ════════════════════════════════════════════════════════════════
         # STAGE 3: Final Report Synthesis (Writer Agent)
@@ -245,8 +305,24 @@ class AnalysisCrew:
 
                 # Citation check
                 citation_result = check_citations(report_text, job_id, self.store)
+                if not citation_result["valid"]:
+                    logger.warning(
+                        "Writer output failed citation gate; using Fact Store fallback: %s",
+                        citation_result,
+                    )
+                    report_text = _build_fallback_report(job_id, self.store, symbol)
+                    citation_result = check_citations(report_text, job_id, self.store)
+                    if not citation_result["valid"]:
+                        raise RuntimeError(
+                            "Report rejected by citation gate after fallback: "
+                            f"{citation_result}"
+                        )
+                    stages_status = "fallback_citation_safe"
+                else:
+                    stages_status = "ok"
+                persist_report_citations(report_text, job_id, self.store)
                 stages["writer"] = {
-                    "status": "ok",
+                    "status": stages_status,
                     "report_length": len(report_text),
                     "citations": citation_result,
                 }
@@ -260,11 +336,30 @@ class AnalysisCrew:
                 progress("stage3", f"⚠ Writer failed: {e}")
                 # Fallback: build a report from Fact Store data directly
                 report_text = _build_fallback_report(job_id, self.store, symbol)
+                citation_result = check_citations(report_text, job_id, self.store)
+                if not citation_result["valid"]:
+                    raise RuntimeError(
+                        "Fallback report rejected by citation gate: "
+                        f"{citation_result}"
+                    )
+                persist_report_citations(report_text, job_id, self.store)
                 stages["writer"]["fallback"] = True
         else:
             # skip_llm mode: build a data-only report
             report_text = _build_fallback_report(job_id, self.store, symbol)
-            stages["writer"] = {"status": "skipped_llm", "fallback": True}
+            citation_result = check_citations(report_text, job_id, self.store)
+            if not citation_result["valid"]:
+                raise RuntimeError(
+                    "Fallback report rejected by citation gate: "
+                    f"{citation_result}"
+                )
+            persist_report_citations(report_text, job_id, self.store)
+            stages["writer"] = {
+                "status": "skipped_llm",
+                "fallback": True,
+                "citations": citation_result,
+            }
+        checkpoint("running", "writer")
 
         # ════════════════════════════════════════════════════════════════
         # SAVE & RETURN
@@ -295,6 +390,8 @@ class AnalysisCrew:
         }
         with open(meta_file, "w") as f:
             json.dump(meta, f, indent=2, default=str)
+
+        checkpoint("completed", "done")
 
         progress("done", f"✅ Analysis complete in {duration:.1f}s → {report_file}")
 
@@ -468,7 +565,6 @@ def _build_fallback_report(job_id: str, store: FactStore, symbol: str) -> str:
     from app.factstore.schemas import (
         FactType,
         FundamentalRow,
-        NarrativeFact,
         NewsSignal,
         QuantSignal,
         RiskFlag,
@@ -480,21 +576,41 @@ def _build_fallback_report(job_id: str, store: FactStore, symbol: str) -> str:
     fund_facts = store.get_facts_by_type(job_id, FactType.FUNDAMENTAL)
     if fund_facts:
         lines.append("### Fundamentals\n")
-        lines.append("| FY | Metric | Value | Unit |")
-        lines.append("|----|--------|-------|------|")
+        lines.append("| FY | Metric | Value | Unit | Fact ID |")
+        lines.append("|----|--------|-------|------|---------|")
         for f in fund_facts:
             if isinstance(f, FundamentalRow):
                 val = f"{f.value:.2f}" if f.value is not None else "N/A"
-                lines.append(f"| {f.fiscal_year} | {f.metric} | {val} | {f.unit or '—'} |")
+                lines.append(
+                    f"| {f.fiscal_year} | {f.metric} | {val} | {f.unit or '—'} | "
+                    f"[fact_id: {f.fact_id}] |"
+                )
 
     # Quant signals
-    quant_facts = store.get_validated_signals(job_id)
+    blocked_targets = {
+        fact.symbol_or_pair.strip().upper()
+        for fact in store.get_facts_by_type(job_id, FactType.RISK_FLAG)
+        if isinstance(fact, RiskFlag) and fact.severity == Severity.BLOCK
+    }
+
+    def is_blocked(target: str) -> bool:
+        normalized = target.strip().upper()
+        if normalized in blocked_targets:
+            return True
+        parts = {part for part in normalized.replace("/", "-").split("-") if part}
+        return any(blocked in parts for blocked in blocked_targets)
+
+    quant_facts = [
+        fact for fact in store.get_validated_signals(job_id)
+        if not is_blocked(fact.symbol_or_pair)
+    ]
     if quant_facts:
         lines.append("\n### Quant Signals\n")
         for q in quant_facts:
             lines.append(
                 f"- **{q.signal_type.value}** ({q.symbol_or_pair}): "
-                f"value={q.value:.4f}, Sharpe={q.backtest_sharpe or 'N/A'}"
+                f"value={q.value:.4f}, Sharpe={q.backtest_sharpe or 'N/A'} "
+                f"[fact_id: {q.fact_id}]"
             )
 
     # News sentiment
@@ -507,7 +623,8 @@ def _build_fallback_report(job_id: str, store: FactStore, symbol: str) -> str:
                 lines.append(
                     f"- **{n.symbol_or_commodity}**: {direction} "
                     f"(score={n.sentiment_score:+.4f}, {n.headline_count} headlines, "
-                    f"event={n.event_type.value if n.event_type else 'general'})"
+                    f"event={n.event_type.value if n.event_type else 'general'}) "
+                    f"[fact_id: {n.fact_id}]"
                 )
                 if n.headlines_sample:
                     for h in n.headlines_sample[:3]:
@@ -520,15 +637,10 @@ def _build_fallback_report(job_id: str, store: FactStore, symbol: str) -> str:
         for r in risk_facts:
             if isinstance(r, RiskFlag):
                 icon = {"info": "ℹ️", "warning": "⚠️", "block": "🛑"}.get(r.severity.value, "❓")
-                lines.append(f"- {icon} **{r.flag_type}**: {r.detail}")
-
-    # Narratives (if any agents ran before writer failed)
-    narrative_facts = store.get_facts_by_type(job_id, FactType.NARRATIVE)
-    if narrative_facts:
-        lines.append("\n### Agent Analysis\n")
-        for n in narrative_facts:
-            if isinstance(n, NarrativeFact):
-                lines.append(f"#### {n.agent_name} — {n.section}\n{n.content}\n")
+                lines.append(
+                    f"- {icon} **{r.flag_type}**: {r.detail} "
+                    f"[fact_id: {r.fact_id}]"
+                )
 
     lines.append(
         "\n---\n\n**Disclaimer**: This report is not investment advice. "

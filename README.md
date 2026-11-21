@@ -42,12 +42,25 @@ Our system is broken down into four decoupled layers, addressing the flaws of na
 
 - **Premium UI Foundation:** A fully responsive, dark-mode frontend built with React and Vite. Features include candlestick charting, a global search interface, and live streaming of agent actions via Server-Sent Events (SSE).
 - **Backend Architecture:** A FastAPI backend providing the robust API layer and streaming services.
-- **Quant Engine Skeleton:** The `app/quant/` directory is seeded with the initial components for backtesting, factor generation, and HMM regime detection.
+- **Quant Engine:** Deterministic backtesting, factor, regime, stat-arb, options,
+  and virtual paper-trading components are under active validation. The first
+  reproducible real-data momentum experiment is recorded in
+  `docs/backtest_reports/real_sleeve_matrix_10yr_20261104_034423.json`; its OOS
+  results are retained as failed/diagnostic sleeves, not presented as validated
+  signals.
 - **Agent Pipelines:** The fundamental crew and orchestrator logic are in place (`app/agents/`), built around a robust `FactStore` to prevent token limits and context bloat.
 - **Version Control & Security:** 
   - Centralized repository initialized on GitHub.
   - Strict branch architectures: `main` (stable releases) and `develop` (active development).
-  - Enforced protections against force-pushes and deletions to safeguard commit history.
+   - Enforced protections against force-pushes and deletions to safeguard commit history.
+
+### Quantitative validation status
+
+The optimization backlog, experiment protocol, and promotion rules are in
+[`docs/ARTHA_OPTIMIZATION_ROADMAP.md`](docs/ARTHA_OPTIMIZATION_ROADMAP.md).
+ARTHA treats Sharpe above 1.3 and approximately 25% CAGR as stretch objectives,
+not as backtest targets. Signals are promoted only after real-data,
+out-of-sample validation with costs, drawdown, capacity, and provenance checks.
 
 ---
 

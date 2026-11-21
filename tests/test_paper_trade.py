@@ -29,6 +29,7 @@ from app.quant.paper_trade import (
     Position,
     VirtualBroker,
     VirtualTrade,
+    MarketDataSnapshot,
 )
 
 
@@ -198,6 +199,13 @@ class TestVirtualBroker:
 
         assert "SBIN" not in broker.positions
 
+    def test_partial_sell_records_actual_filled_quantity(self, broker):
+        broker.execute_virtual_trade("INFY", OrderSide.BUY, 100, 1500.0)
+        trade = broker.execute_virtual_trade("INFY", OrderSide.SELL, 200, 1600.0)
+        assert trade is not None
+        assert trade.quantity == 100
+        assert "INFY" not in broker.positions
+
     def test_sell_nonexistent_returns_none(self, broker):
         """Selling a symbol we don't hold should return None."""
         result = broker.execute_virtual_trade(
@@ -364,11 +372,83 @@ class TestDaemon:
         )
 
         # Run one signal cycle manually
+        # Use an explicit validated target fixture; the daemon must not invent
+        # an equal-weight fallback when the engine is unavailable.
+        daemon._compute_target_weights = lambda prices: {
+            "RELIANCE": 0.5,
+            "TCS": 0.5,
+        }
         daemon._run_signal_cycle()
 
-        # Should have created positions (equal weight rebalance)
+        # Should have created positions from the explicit target.
         assert len(daemon.broker.positions) > 0
         assert daemon.broker.cash < 1_00_00_000.0
+
+    def test_signal_cycle_rejects_partial_snapshot(self, temp_db):
+        daemon = PaperTradingDaemon(
+            symbols=["RELIANCE", "TCS"],
+            initial_capital=1_00_00_000.0,
+            db_path=temp_db,
+        )
+        daemon.feed.fetch_snapshot = lambda: MarketDataSnapshot(
+            prices={"RELIANCE": 2500.0},
+            observed_at=datetime.now(),
+            source="fixture",
+            requested_symbols=("RELIANCE", "TCS"),
+        )
+        daemon._run_signal_cycle()
+        assert len(daemon.broker.positions) == 0
+        assert daemon._last_snapshot.quality == "PARTIAL"
+
+    def test_signal_cycle_rejects_uninitialized_engine(self, temp_db):
+        daemon = PaperTradingDaemon(
+            symbols=["RELIANCE"],
+            initial_capital=1_00_00_000.0,
+            db_path=temp_db,
+        )
+        daemon.feed.fetch_snapshot = lambda: MarketDataSnapshot(
+            prices={"RELIANCE": 2500.0},
+            observed_at=datetime.now(),
+            source="fixture",
+            requested_symbols=("RELIANCE",),
+        )
+        daemon._run_signal_cycle()
+        assert len(daemon.broker.positions) == 0
+        assert "not initialized" in daemon._last_error
+
+    def test_initialized_engine_without_validation_evidence_cannot_trade(self, temp_db):
+        daemon = PaperTradingDaemon(
+            symbols=["RELIANCE"],
+            initial_capital=1_00_00_000.0,
+            db_path=temp_db,
+        )
+        daemon.engine._initialized = True
+        daemon.engine.compute_targets = lambda current_prices: None
+        assert daemon._compute_target_weights({"RELIANCE": 2500.0}) is None
+        assert "validation evidence" in daemon._last_error
+
+    def test_rebalance_liquidates_symbols_removed_from_target(self, temp_db):
+        daemon = PaperTradingDaemon(
+            symbols=["RELIANCE"],
+            initial_capital=1_00_00_000.0,
+            db_path=temp_db,
+        )
+        daemon.broker.execute_virtual_trade(
+            "RELIANCE", OrderSide.BUY, 100, 2500.0,
+        )
+        daemon.broker.update_prices({"RELIANCE": 2500.0})
+        daemon._rebalance_to_targets({}, {"RELIANCE": 2500.0})
+        assert "RELIANCE" not in daemon.broker.positions
+
+    def test_validation_metrics_do_not_use_hardcoded_backtest(self, temp_db):
+        daemon = PaperTradingDaemon(
+            symbols=["RELIANCE"],
+            initial_capital=1_00_00_000.0,
+            db_path=temp_db,
+        )
+        metrics = daemon.get_validation_metrics()
+        assert "backtest_sharpe" not in metrics
+        assert "backtest_reference" in metrics
 
     @patch("app.quant.paper_trade.MarketDataFeed.fetch_current_prices")
     def test_signal_cycle_skips_on_no_prices(self, mock_fetch, temp_db):

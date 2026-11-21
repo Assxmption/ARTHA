@@ -86,6 +86,30 @@ app.include_router(company_router)
 app.include_router(paper_trade_router)
 app.include_router(screener_router)
 
+
+@app.get("/api/health", tags=["System"])
+async def health_check() -> dict:
+    """Return a lightweight liveness/readiness response for deployment checks."""
+    optional_dependencies = {}
+    for package in ("pykalman", "transformers", "torch", "psycopg2"):
+        try:
+            __import__(package)
+            optional_dependencies[package] = True
+        except ImportError:
+            optional_dependencies[package] = False
+
+    return {
+        "status": "ok",
+        "service": "artha",
+        "factstore_backend": (
+            "postgres"
+            if os.getenv("DATABASE_URL", "").startswith(("postgres://", "postgresql://"))
+            else "sqlite"
+        ),
+        "frontend_build_present": (Path("frontend/dist/index.html").exists()),
+        "optional_dependencies": optional_dependencies,
+    }
+
 # ── Static Files (Frontend) ───────────────────────────────────────────────────
 frontend_dir = Path("frontend/dist")
 if frontend_dir.exists():

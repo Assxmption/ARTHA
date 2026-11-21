@@ -47,6 +47,7 @@ IST_UTC_OFFSET = timedelta(hours=5, minutes=30)
 # Slippage model: 10bps per trade (5bps spread + 5bps impact)
 # Matches the backtest cost model for consistency.
 SLIPPAGE_BPS = 10
+MAX_PRICE_STALENESS_SECONDS = 20 * 60
 
 
 # ── Data Models ─────────────────────────────────────────────────────────────────
@@ -133,6 +134,40 @@ class DaemonStatus:
     n_positions: int = 0
     n_trades_today: int = 0
     market_status: str = "CLOSED"  # OPEN, CLOSED, PRE_MARKET
+    last_data_timestamp: Optional[str] = None
+    data_age_seconds: Optional[float] = None
+    data_quality: str = "UNKNOWN"
+
+
+@dataclass(frozen=True)
+class MarketDataSnapshot:
+    """One coherent price snapshot used for both signals and virtual fills."""
+    prices: dict[str, float]
+    observed_at: datetime
+    source: str
+    requested_symbols: tuple[str, ...]
+
+    @property
+    def age_seconds(self) -> float:
+        return max(0.0, (datetime.now() - self.observed_at).total_seconds())
+
+    @property
+    def missing_symbols(self) -> list[str]:
+        return [symbol for symbol in self.requested_symbols if symbol not in self.prices]
+
+    @property
+    def is_fresh(self) -> bool:
+        return bool(self.prices) and self.age_seconds <= MAX_PRICE_STALENESS_SECONDS
+
+    @property
+    def quality(self) -> str:
+        if not self.prices:
+            return "EMPTY"
+        if self.missing_symbols:
+            return "PARTIAL"
+        if not self.is_fresh:
+            return "STALE"
+        return "FRESH"
 
 
 # ── Persistence Layer ───────────────────────────────────────────────────────────
@@ -299,6 +334,7 @@ class MarketDataFeed:
         self.symbols = symbols
         self._cache: dict[str, pd.DataFrame] = {}
         self._last_fetch: Optional[datetime] = None
+        self._last_observed_at: Optional[datetime] = None
 
     def fetch_current_prices(self) -> dict[str, float]:
         """
@@ -325,21 +361,41 @@ class MarketDataFeed:
                 threads=True,
             )
             prices = {}
+            observation_times = []
             for sym, yf_sym in zip(self.symbols, yf_symbols):
                 try:
                     if len(self.symbols) == 1:
                         close = data["Close"]
                     else:
                         close = data["Close"][yf_sym]
-                    last = close.dropna().iloc[-1]
+                    observed_close = close.dropna()
+                    last = observed_close.iloc[-1]
                     prices[sym] = float(last)
+                    if len(observed_close.index):
+                        observation_times.append(observed_close.index[-1])
                 except (KeyError, IndexError):
                     logger.warning("No price data for %s", sym)
             self._last_fetch = datetime.now()
+            if observation_times:
+                observed = pd.Timestamp(max(observation_times))
+                if observed.tzinfo is not None:
+                    observed = observed.tz_convert(None)
+                self._last_observed_at = observed.to_pydatetime()
             return prices
         except Exception as e:
             logger.error("Failed to fetch prices: %s", e)
             return {}
+
+    def fetch_snapshot(self) -> MarketDataSnapshot:
+        """Fetch one timestamped snapshot for an atomic signal/fill cycle."""
+        prices = self.fetch_current_prices()
+        observed_at = self._last_observed_at or self._last_fetch or datetime.now()
+        return MarketDataSnapshot(
+            prices=prices,
+            observed_at=observed_at,
+            source="yfinance_15m",
+            requested_symbols=tuple(self.symbols),
+        )
 
     def fetch_historical(
         self, period: str = "2y", interval: str = "1d",
@@ -488,6 +544,9 @@ class VirtualBroker:
             realized_pnl = sell_qty * (fill_price - pos.avg_entry_price)
             self.cash += fill_price * sell_qty
             pos.quantity -= sell_qty
+            # Persist what actually filled, not the requested quantity. This
+            # matters when a target reduction exceeds the held position.
+            quantity = sell_qty
             if pos.quantity <= 0:
                 del self.positions[symbol]
 
@@ -576,6 +635,7 @@ class PaperTradingDaemon:
         db_path: str | Path = "data_cache/paper_trades.db",
         rebalance_interval_min: int = 15,
         weight_rebalance_days: int = 63,
+        validation_evidence: Optional[dict] = None,
     ):
         self.symbols = symbols
         self.db_path = Path(db_path)
@@ -611,6 +671,8 @@ class PaperTradingDaemon:
         self._last_error: Optional[str] = None
         self._current_regime = "UNKNOWN"
         self._hedge_ratio = 0.0
+        self._last_snapshot: Optional[MarketDataSnapshot] = None
+        self.validation_evidence = validation_evidence or {}
         self._today_start_nav = self.broker.nav
         self._lock = threading.Lock()
 
@@ -726,18 +788,25 @@ class PaperTradingDaemon:
         """
         logger.info("Running signal cycle at %s", datetime.now().isoformat())
 
-        # 1. Fetch current prices
-        prices = self.feed.fetch_current_prices()
-        if not prices:
-            logger.warning("No prices available — skipping cycle")
+        # 1. Fetch one coherent, timestamped price snapshot.
+        snapshot = self.feed.fetch_snapshot()
+        self._last_snapshot = snapshot
+        if not snapshot.is_fresh or snapshot.missing_symbols:
+            reason = (
+                f"quality={snapshot.quality}, age={snapshot.age_seconds:.0f}s, "
+                f"missing={snapshot.missing_symbols}"
+            )
+            self._last_error = f"Market data rejected: {reason}"
+            logger.warning("Market data rejected — skipping cycle: %s", reason)
             return
+        prices = snapshot.prices
 
         # 2. Update positions with current prices
         with self._lock:
             self.broker.update_prices(prices)
 
         # 3. Compute target portfolio (using historical data + current regime)
-        target_weights = self._compute_target_weights()
+        target_weights = self._compute_target_weights(prices)
         if target_weights is None:
             logger.warning("Could not compute target weights — skipping cycle")
             return
@@ -781,13 +850,16 @@ class PaperTradingDaemon:
             self.engine.current_regime, len(prices),
         )
 
-    def _compute_target_weights(self) -> Optional[dict[str, float]]:
+    def _compute_target_weights(
+        self, current_prices: Optional[dict[str, float]] = None,
+    ) -> Optional[dict[str, float]]:
         """
         Compute target portfolio weights using the full multi-strategy
         signal engine.
 
-        Falls back to equal-weight if the engine is not initialized or
-        if signal computation fails.
+        Fails closed if the validated strategy engine is unavailable. Equal
+        weight is not a validated strategy and must never become a live paper
+        trade implicitly.
         """
         n = len(self.symbols)
         if n == 0:
@@ -795,8 +867,13 @@ class PaperTradingDaemon:
 
         # Try the full strategy engine first
         if self.engine.is_initialized:
+            if not self._has_validated_evidence():
+                self._last_error = (
+                    "No canonical walk-forward validation evidence; paper trades rejected"
+                )
+                return None
             try:
-                prices = self.feed.fetch_current_prices()
+                prices = current_prices or self.feed.fetch_current_prices()
                 target = self.engine.compute_targets(
                     current_prices=prices,
                 )
@@ -811,12 +888,29 @@ class PaperTradingDaemon:
                     )
                     return target.weights
             except Exception as e:
-                logger.warning("Engine signal failed, falling back to equal-weight: %s", e)
+                logger.warning("Engine signal failed; rejecting cycle: %s", e)
                 self._last_error = f"Engine signal failed: {e}"
+                return None
 
-        # Fallback: equal weight
-        weights = {sym: 1.0 / n for sym in self.symbols}
-        return weights
+        self._last_error = "Validated strategy engine is not initialized"
+        return None
+
+    def _has_validated_evidence(self) -> bool:
+        """Require the same minimum evidence as the Fact Store gate."""
+        evidence = self.validation_evidence
+        if not isinstance(evidence, dict):
+            return False
+        try:
+            return bool(
+                evidence.get("validated") is True
+                and evidence.get("validation_method") == "walk_forward_oos"
+                and evidence.get("validation_id")
+                and int(evidence.get("validation_oos_days", 0)) >= 504
+                and float(evidence.get("backtest_sharpe", 0.0)) >= 1.0
+                and float(evidence.get("backtest_max_drawdown", 1.0)) <= 0.25
+            )
+        except (TypeError, ValueError):
+            return False
 
     def _record_daily_return(self):
         """Record daily return for forward-test Sharpe computation."""
@@ -848,8 +942,11 @@ class PaperTradingDaemon:
                 for sym, pos in self.broker.positions.items()
             }
 
-            # Compute trades needed
-            for sym in target_weights:
+            # Compute trades needed. Symbols absent from a new target are
+            # explicit zero-weight exits; otherwise dropped signals could
+            # leave stale holdings open indefinitely.
+            symbols_to_rebalance = set(target_weights) | set(current_values)
+            for sym in symbols_to_rebalance:
                 if sym not in prices:
                     continue
 
@@ -857,7 +954,7 @@ class PaperTradingDaemon:
                 if price <= 0:
                     continue
 
-                target_val = target_values.get(sym, 0)
+                target_val = target_values.get(sym, 0.0)
                 current_val = current_values.get(sym, 0)
                 diff = target_val - current_val
 
@@ -920,6 +1017,15 @@ class PaperTradingDaemon:
             n_positions=len(self.broker.positions),
             n_trades_today=len(today_trades),
             market_status=self.get_market_status(),
+            last_data_timestamp=(
+                self._last_snapshot.observed_at.isoformat()
+                if self._last_snapshot else None
+            ),
+            data_age_seconds=(
+                round(self._last_snapshot.age_seconds, 2)
+                if self._last_snapshot else None
+            ),
+            data_quality=self._last_snapshot.quality if self._last_snapshot else "UNKNOWN",
         )
 
     def get_validation_metrics(self) -> dict:
@@ -943,6 +1049,8 @@ class PaperTradingDaemon:
         # Model info
         model_info = self.engine.model_info if self.engine else {}
 
+        backtest_reference = self._load_backtest_reference()
+
         # Strategy weights from last target
         strategy_weights = {}
         active_strategies = []
@@ -953,7 +1061,9 @@ class PaperTradingDaemon:
         return {
             "days_running": n_days,
             "forward_sharpe": round(forward_sharpe, 4),
-            "backtest_sharpe": 1.12,  # From honest 12-year backtest
+            "backtest_reference": backtest_reference,
+            "paper_trade_eligible": self._has_validated_evidence(),
+            "validation_id": self.validation_evidence.get("validation_id"),
             "annualized_return": round(ann_return * 100, 2),
             "annualized_vol": round(ann_vol * 100, 2),
             "tracking_error": None,  # TODO: requires live benchmark comparison
@@ -962,7 +1072,42 @@ class PaperTradingDaemon:
             "active_strategies": active_strategies,
             "strategy_weights": strategy_weights,
             "total_daily_returns": n_days,
+            "data_quality": (
+                self._last_snapshot.quality if self._last_snapshot else "UNKNOWN"
+            ),
         }
+
+    @staticmethod
+    def _load_backtest_reference() -> dict:
+        """Load only validation-authoritative evidence, never legacy metrics."""
+        report_dir = Path("docs/backtest_reports")
+        reports = sorted(
+            report_dir.glob("*.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        ) if report_dir.exists() else []
+        for path in reports:
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                validation = payload.get("validation")
+                if not isinstance(validation, dict):
+                    continue
+                # Reports may contain per-sleeve evidence under a section; the
+                # historical runner currently writes one diagnostic object.
+                evidence = validation.get("composite", validation)
+                if not isinstance(evidence, dict):
+                    continue
+                if "validation_id" in evidence:
+                    return {
+                        "file": str(path),
+                        "validation": evidence,
+                        "eligible_for_factstore": bool(
+                            evidence.get("eligible_for_factstore", False)
+                        ),
+                    }
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                continue
+        return {"available": False, "reason": "No compatible backtest artifact"}
 
     def get_strategy_weights(self) -> dict:
         """Get current per-strategy allocation weights."""

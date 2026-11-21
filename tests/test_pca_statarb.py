@@ -329,6 +329,9 @@ class TestWalkForward:
             prices, train_days=300, test_days=100,
         )
         assert result["n_windows"] >= 1
+        # Short synthetic OOS samples cannot satisfy the canonical 504-day
+        # validation gate, regardless of their in-sample appearance.
+        assert result["validated"] is False
 
     def test_overfit_detection(self):
         """

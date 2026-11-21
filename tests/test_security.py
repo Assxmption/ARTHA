@@ -16,6 +16,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.security import sanitize_query
+from app.security.auth import get_current_user
 
 
 class TestQuerySanitization:
@@ -96,3 +97,22 @@ class TestQuerySanitization:
     def test_whitespace_only(self):
         with pytest.raises(ValueError):
             sanitize_query("   ")
+
+
+class TestRouteAuthentication:
+    """Route dependencies must match the middleware's dev/prod policy."""
+
+    def test_development_without_credentials_is_usable(self, monkeypatch):
+        import app.security.auth as auth_module
+
+        monkeypatch.setenv("AUTH_REQUIRED", "false")
+        monkeypatch.setattr(auth_module, "SUPABASE_JWT_SECRET", "")
+        assert get_current_user(None)["role"] == "development"
+
+    def test_production_without_credentials_fails_closed(self, monkeypatch):
+        from fastapi import HTTPException
+
+        monkeypatch.setenv("AUTH_REQUIRED", "true")
+        with pytest.raises(HTTPException) as exc:
+            get_current_user(None)
+        assert exc.value.status_code == 401

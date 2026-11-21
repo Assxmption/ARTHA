@@ -54,9 +54,9 @@ async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundT
     Start an ARTHA analysis job for an NSE symbol.
 
     The pipeline runs:
-      Stage 1: Fundamental data collection + quant signal injection
-      Stage 2: Quant narration + risk checks (via Fact Store)
-      Stage 3: Final report synthesis (deep LLM model)
+      Stage 1: Fundamental data collection + deterministic news sentiment
+      Stage 2: Fundamentals/sentiment narration + risk checks (via Fact Store)
+      Stage 3: Final report synthesis with a blocking citation gate
 
     Returns immediately with a job_id. Poll /api/analyze/{job_id} for results.
     """
@@ -96,6 +96,18 @@ async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundT
 async def get_analysis_status(job_id: str):
     """Get the current status and result of an analysis job."""
     if job_id not in _analysis_jobs:
+        # Recover durable state after an API worker restart.
+        durable = _crew.store.get_job_state(job_id)
+        if durable:
+            report_text = _crew.get_report(job_id)
+            return AnalysisJobStatus(
+                job_id=job_id,
+                symbol=durable.get("symbol", "UNKNOWN"),
+                status=durable.get("status", "unknown"),
+                report=report_text,
+                stages=durable.get("stages"),
+                error=durable.get("error"),
+            )
         # Try loading from saved reports
         report_text = _crew.get_report(job_id)
         if report_text:
@@ -208,6 +220,16 @@ async def _run_analysis_job(job_id: str, symbol: str, skip_llm: bool):
 
     except Exception as e:
         logger.exception("Analysis job %s failed", job_id)
+        durable = _crew.store.get_job_state(job_id) or {}
+        _crew.store.upsert_job(
+            job_id=job_id,
+            symbol=symbol,
+            status="failed",
+            current_stage=durable.get("current_stage"),
+            stages=durable.get("stages", {}),
+            error=str(e),
+            attempt_count=durable.get("attempt_count", 1),
+        )
         _analysis_jobs[job_id].update({
             "status": "failed",
             "error": str(e),

@@ -28,6 +28,59 @@ REPORT_DIR = Path(__file__).resolve().parent.parent.parent / "docs" / "backtest_
 CACHE_DIR = Path(__file__).resolve().parent.parent.parent / "data_cache"
 
 
+@quant_router.get("/mcx/contracts")
+async def list_mcx_contracts(commodity: str | None = None):
+    """List configured MCX contract metadata used for sizing."""
+    from app.data.mcx_contracts import MCXContractMaster
+
+    master = MCXContractMaster()
+    return {"contracts": master.to_dict(commodity)}
+
+
+@quant_router.get("/mcx/ohlcv/{commodity}")
+async def get_mcx_ohlcv(
+    commodity: str,
+    start_date: str,
+    end_date: str | None = None,
+    instrument: str = "FUTCOM",
+    include_contract_metadata: bool = False,
+):
+    """Read-only MCX EOD history from the cached/provider-backed data layer."""
+    from datetime import date
+
+    from app.data.mcx import fetch_mcx_history
+    from app.data.mcx_contracts import MCXContractMaster, contract_metadata_for_frame
+
+    try:
+        start = date.fromisoformat(start_date)
+        finish = date.fromisoformat(end_date) if end_date else None
+        frame = fetch_mcx_history(
+            start,
+            finish,
+            commodity=commodity,
+            instrument=instrument,
+        )
+        if include_contract_metadata and not frame.empty:
+            frame = contract_metadata_for_frame(frame, MCXContractMaster())
+        records = frame.where(frame.notna(), None).to_dict(orient="records")
+        for record in records:
+            for key in ("trade_date", "expiry_date"):
+                if record.get(key) is not None:
+                    record[key] = record[key].isoformat()
+        return {
+            "commodity": commodity.upper(),
+            "instrument": instrument.upper(),
+            "data": records,
+            "count": len(records),
+            "sizing_metadata_included": include_contract_metadata,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("MCX data request failed for %s", commodity)
+        raise HTTPException(status_code=502, detail=f"MCX data unavailable: {exc}") from exc
+
+
 def _load_report(filename: str) -> dict:
     """Load a JSON report from the backtest reports directory."""
     path = REPORT_DIR / filename
@@ -465,87 +518,40 @@ async def get_options_chain(symbol: str):
     Sources (in priority order):
       1. nselib — purpose-built NSE scraper
       2. Direct NSE India API with proper headers
-      3. Fallback mock if both fail (for UI development only)
+      3. Explicit unavailable response if both fail
+
+    Synthetic option chains are never returned by the production API. A
+    missing feed must not influence options signals, sizing, or paper trades.
     """
     from app.data.nse_fno import get_option_chain
     
     try:
         result = get_option_chain(symbol.upper())
         
-        # If real data failed, generate realistic mock as last resort
+        # Missing real data is an unavailable market-data condition, not a
+        # reason to fabricate prices or open interest.
         if result.get("source") == "none" or not result.get("calls"):
-            logger.warning("Real NSE data unavailable for %s, generating mock fallback", symbol)
-            return await _generate_mock_options(symbol)
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "OPTIONS_DATA_UNAVAILABLE",
+                    "symbol": symbol.upper(),
+                    "message": "Real NSE option-chain data is currently unavailable",
+                },
+            )
         
         return result
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching options chain for {symbol}: {e}")
-        return await _generate_mock_options(symbol)
-
-
-async def _generate_mock_options(symbol: str):
-    """Fallback mock options chain when real NSE data is unavailable."""
-    import yfinance as yf
-    import numpy as np
-    from datetime import date as _date, timedelta
-    
-    try:
-        ticker = yf.Ticker(f"{symbol.upper()}.NS")
-        hist = ticker.history(period="1d")
-        spot_price = float(hist['Close'].iloc[-1]) if not hist.empty else 2500.0
-    except Exception:
-        spot_price = 2500.0
-    
-    if spot_price < 500:
-        step = 5
-    elif spot_price < 2000:
-        step = 10
-    elif spot_price < 5000:
-        step = 50
-    else:
-        step = 100
-    
-    center_strike = round(spot_price / step) * step
-    strikes = [center_strike + (i * step) for i in range(-6, 7)]
-    calls, puts = [], []
-    
-    for k in strikes:
-        time_value_call = np.random.uniform(2, 20)
-        time_value_put = np.random.uniform(2, 20)
-        call_price = max(0, spot_price - k) + time_value_call
-        put_price = max(0, k - spot_price) + time_value_put
-        
-        calls.append({
-            "strike": k,
-            "lastPrice": round(call_price, 2),
-            "volume": int(np.random.randint(100, 50000)),
-            "openInterest": int(np.random.randint(1000, 200000)),
-            "impliedVolatility": round(np.random.uniform(0.12, 0.45), 4),
-            "change": round(np.random.uniform(-5, 5), 2),
-        })
-        puts.append({
-            "strike": k,
-            "lastPrice": round(put_price, 2),
-            "volume": int(np.random.randint(100, 50000)),
-            "openInterest": int(np.random.randint(1000, 200000)),
-            "impliedVolatility": round(np.random.uniform(0.12, 0.45), 4),
-            "change": round(np.random.uniform(-5, 5), 2),
-        })
-    
-    today = _date.today()
-    days_ahead = 3 - today.weekday()
-    if days_ahead <= 0:
-        days_ahead += 7
-    expiry = today + timedelta(days=days_ahead)
-    
-    return {
-        "symbol": symbol.upper(),
-        "spotPrice": round(spot_price, 2),
-        "expiry": expiry.strftime("%Y-%m-%d"),
-        "calls": calls,
-        "puts": puts,
-        "source": "mock_fallback",
-        "warning": "Real NSE data unavailable. This is mock data for UI development.",
-    }
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "OPTIONS_DATA_UNAVAILABLE",
+                "symbol": symbol.upper(),
+                "message": "Real NSE option-chain data is currently unavailable",
+            },
+        ) from e
 

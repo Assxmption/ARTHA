@@ -336,7 +336,8 @@ class TestForwardTestIntegration:
 
         assert metrics["days_running"] == 0
         assert metrics["forward_sharpe"] == 0.0
-        assert metrics["backtest_sharpe"] == 1.12
+        assert "backtest_sharpe" not in metrics
+        assert "backtest_reference" in metrics
 
     def test_validation_metrics_after_returns(self):
         """Sharpe should be computed after accumulating daily returns."""

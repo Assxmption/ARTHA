@@ -40,6 +40,33 @@ from app.llm.router import get_deep_llm
 logger = logging.getLogger(__name__)
 
 
+def _blocked_targets(store: FactStore, job_id: str) -> set[str]:
+    """Return normalized symbols/pairs vetoed by BLOCK risk facts."""
+    return {
+        fact.symbol_or_pair.strip().upper()
+        for fact in store.get_facts_by_type(job_id, FactType.RISK_FLAG)
+        if isinstance(fact, RiskFlag) and fact.severity.value == "block"
+    }
+
+
+def _is_blocked_target(target: str, blocked: set[str]) -> bool:
+    """Match a blocked symbol against a symbol or a multi-leg pair/spread."""
+    normalized = target.strip().upper()
+    if normalized in blocked:
+        return True
+    tokens = {
+        token
+        for token in re.split(r"[^A-Z0-9_.-]+", normalized)
+        if token
+    }
+    return any(
+        blocked_target in tokens
+        or blocked_target in normalized.split("-")
+        or blocked_target in normalized.split("/")
+        for blocked_target in blocked
+    )
+
+
 def create_writer_agent() -> Agent:
     """
     Create the ARTHA Writer Agent.
@@ -133,7 +160,11 @@ def build_writer_context(
         sections.append("")
 
     # ── Quant Signals (validated only) ──────────────────────────────────
-    quant_facts = store.get_validated_signals(job_id)
+    blocked_targets = _blocked_targets(store, job_id)
+    quant_facts = [
+        fact for fact in store.get_validated_signals(job_id)
+        if not _is_blocked_target(fact.symbol_or_pair, blocked_targets)
+    ]
     if quant_facts:
         sections.append("## VALIDATED QUANT SIGNALS (from Fact Store)\n")
         for q in quant_facts:
@@ -225,6 +256,17 @@ def check_citations(
     id_pattern = re.compile(r"fact_id[:\s]+([a-f0-9]{8,})")
     found_ids = id_pattern.findall(report_text)
 
+    # A citation somewhere in a report is not enough: every line containing a
+    # numeric claim must carry a citation.  This is intentionally conservative;
+    # the writer prompt can always add a citation when a line is ambiguous.
+    citation_pattern = re.compile(r"fact_id[:\s]+[a-f0-9]{8,}", re.IGNORECASE)
+    numeric_pattern = re.compile(r"(?<![A-Za-z])[₹$€£]?\d+(?:[,.]\d+)*(?:%|[A-Za-z]{1,6})?")
+    uncited_numeric_claims = []
+    for line in report_text.splitlines():
+        without_citation = citation_pattern.sub("", line)
+        if numeric_pattern.search(without_citation) and not citation_pattern.search(line):
+            uncited_numeric_claims.append(line.strip())
+
     # De-duplicate
     unique_ids = list(set(found_ids))
 
@@ -248,8 +290,44 @@ def check_citations(
             unresolved.append(ref_id)
 
     return {
-        "valid": len(unresolved) == 0 and len(resolved) > 0,
+        "valid": (
+            len(unresolved) == 0
+            and len(resolved) > 0
+            and len(uncited_numeric_claims) == 0
+        ),
         "total_citations": len(unique_ids),
         "resolved": len(resolved),
         "unresolved": unresolved,
+        "uncited_numeric_claims": uncited_numeric_claims,
     }
+
+
+def persist_report_citations(
+    report_text: str,
+    job_id: str,
+    store: FactStore,
+) -> dict:
+    """Persist resolved and unresolved report citations as Fact Store facts."""
+    result = check_citations(report_text, job_id, store)
+    all_facts = store.get_job_facts(job_id)
+    fact_id_map = {fact.fact_id: fact for fact in all_facts}
+    citations: list[ReportCitation] = []
+    for ref_id in re.findall(r"fact_id[:\s]+([a-f0-9]{8,})", report_text):
+        matched_id = next(
+            (full_id for full_id in fact_id_map if full_id.startswith(ref_id)),
+            ref_id,
+        )
+        claim = next(
+            (line.strip() for line in report_text.splitlines() if ref_id in line),
+            ref_id,
+        )
+        citations.append(ReportCitation(
+            job_id=job_id,
+            source="writer_agent.citation_check",
+            claim_text=claim,
+            referenced_fact_id=matched_id,
+            resolved=matched_id in fact_id_map and bool(fact_id_map[matched_id].source),
+        ))
+    if citations:
+        store.put_facts(citations)
+    return result

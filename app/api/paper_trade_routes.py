@@ -117,6 +117,9 @@ async def get_status(user=Depends(get_current_user)):
         "n_positions": status.n_positions,
         "n_trades_today": status.n_trades_today,
         "market_status": status.market_status,
+        "last_data_timestamp": status.last_data_timestamp,
+        "data_age_seconds": status.data_age_seconds,
+        "data_quality": status.data_quality,
     }
 
 
@@ -234,4 +237,3 @@ async def get_strategy_weights(user=Depends(get_current_user)):
         raise HTTPException(404, "Daemon not initialized")
 
     return _daemon.get_strategy_weights()
-

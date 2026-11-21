@@ -36,6 +36,13 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from app.quant.backtest import (
+    MAX_OOS_DRAWDOWN,
+    MIN_OOS_SHARPE,
+    MIN_OOS_TRADING_DAYS,
+    compute_metrics,
+)
+
 logger = logging.getLogger(__name__)
 
 # ── Configuration ───────────────────────────────────────────────────────────────
@@ -314,14 +321,17 @@ def backtest_pca_statarb(
     max_weight = min(max_position_pct, 1.0 / max(n_stocks, 1))
 
     # Count active positions each day
-    n_active = signals.abs().sum(axis=1).replace(0, np.nan)
+    # Signals are shifted for next-day execution. Position sizing must use the
+    # same lagged active set; using current-day n_active leaks tomorrow's
+    # portfolio width into today's return attribution.
+    shifted_signals = signals.shift(1)
+    n_active = shifted_signals.abs().sum(axis=1).replace(0, np.nan)
 
     # Per-stock weight = min(1/n_active, max_weight)
     weight_per_stock = (1.0 / n_active).clip(upper=max_weight)
 
     # Daily return contribution from each stock
     # Signal × next-day return × weight (signal at close t → return t+1)
-    shifted_signals = signals.shift(1)  # Lag signals by 1 day
     daily_contrib = shifted_signals.multiply(returns).multiply(
         weight_per_stock, axis=0,
     )
@@ -375,7 +385,7 @@ def walk_forward_pca_statarb(
     entry_z: float = DEFAULT_ENTRY_Z,
     exit_z: float = DEFAULT_EXIT_Z,
     tc_bps: float = DEFAULT_TC_BPS,
-    min_sharpe_oos: float = 0.5,
+    min_sharpe_oos: float = MIN_OOS_SHARPE,
 ) -> dict:
     """
     Walk-forward validation of PCA stat-arb strategy.
@@ -397,7 +407,8 @@ def walk_forward_pca_statarb(
     tc_bps : float
         Transaction costs.
     min_sharpe_oos : float
-        Minimum OOS Sharpe for validation.
+        Minimum OOS Sharpe diagnostic threshold. The canonical gate remains
+        at least ``MIN_OOS_SHARPE`` regardless of a caller-supplied lower value.
 
     Returns
     -------
@@ -415,6 +426,7 @@ def walk_forward_pca_statarb(
         }
 
     oos_sharpes = []
+    oos_return_series = []
     is_sharpes = []
     n_windows = 0
     start_idx = 0
@@ -441,11 +453,12 @@ def walk_forward_pca_statarb(
             full_prices, n_components, entry_z, exit_z, tc_bps,
         )
         oos_ret = full_ret.iloc[train_days:]
-        oos_arr = oos_ret.values
-        oos_arr = oos_arr[~np.isnan(oos_arr)]
+        oos_clean = oos_ret.dropna()
+        oos_arr = oos_clean.values
         if len(oos_arr) > 20 and np.std(oos_arr) > 1e-10:
             oos_sharpe = (np.mean(oos_arr) / np.std(oos_arr)) * np.sqrt(252)
             oos_sharpes.append(oos_sharpe)
+            oos_return_series.append(oos_clean)
 
         n_windows += 1
         start_idx += test_days
@@ -460,15 +473,23 @@ def walk_forward_pca_statarb(
     avg_is_sharpe = float(np.mean(is_sharpes)) if is_sharpes else 0.0
     avg_oos_sharpe = float(np.mean(oos_sharpes)) if oos_sharpes else 0.0
 
+    combined_oos = (
+        pd.concat(oos_return_series) if oos_return_series else pd.Series(dtype=float)
+    )
+    oos_metrics = compute_metrics(combined_oos)
+    required_sharpe = max(float(min_sharpe_oos), MIN_OOS_SHARPE)
     validated = (
-        avg_oos_sharpe >= min_sharpe_oos
+        len(combined_oos) >= MIN_OOS_TRADING_DAYS
+        and oos_metrics.sharpe_ratio >= required_sharpe
+        and oos_metrics.max_drawdown <= MAX_OOS_DRAWDOWN
         and len(oos_sharpes) >= n_windows // 2
     )
 
     reason = (
-        f"OOS Sharpe {avg_oos_sharpe:.3f} "
-        f"{'≥' if avg_oos_sharpe >= min_sharpe_oos else '<'} {min_sharpe_oos} "
+        f"OOS Sharpe {oos_metrics.sharpe_ratio:.3f} "
+        f"{'≥' if oos_metrics.sharpe_ratio >= required_sharpe else '<'} {required_sharpe} "
         f"across {n_windows} windows ({len(oos_sharpes)} with trades). "
+        f"OOS days: {len(combined_oos)}; OOS MaxDD: {oos_metrics.max_drawdown:.3f}; "
         f"IS Sharpe: {avg_is_sharpe:.3f} ({len(is_sharpes)} IS windows)"
     )
 
@@ -483,5 +504,8 @@ def walk_forward_pca_statarb(
         "reason": reason,
         "n_windows": n_windows,
         "in_sample_sharpe": round(avg_is_sharpe, 4),
-        "out_of_sample_sharpe": round(avg_oos_sharpe, 4),
+        "out_of_sample_sharpe": round(oos_metrics.sharpe_ratio, 4),
+        "out_of_sample_sortino": oos_metrics.sortino_ratio,
+        "out_of_sample_max_drawdown": oos_metrics.max_drawdown,
+        "out_of_sample_days": len(combined_oos),
     }

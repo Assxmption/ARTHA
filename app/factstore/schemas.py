@@ -21,7 +21,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ── Enumerations ────────────────────────────────────────────────────────────────
@@ -190,7 +190,56 @@ class QuantSignal(BaseFact):
             "gate in app/quant/backtest.py.  Never set by an LLM."
         ),
     )
+    validation_method: Optional[str] = Field(
+        None,
+        description=(
+            "Validation protocol that produced this signal. Required when "
+            "validated=True; currently only 'walk_forward_oos' is accepted."
+        ),
+    )
+    validation_oos_days: Optional[int] = Field(
+        None,
+        ge=0,
+        description="Number of out-of-sample trading days in the validation evidence.",
+    )
+    validation_id: Optional[str] = Field(
+        None,
+        description="Stable identifier for the backtest evidence that cleared the gate.",
+    )
     as_of: date = Field(..., description="Date the signal was computed for.")
+
+    @model_validator(mode="after")
+    def require_validation_evidence(self) -> "QuantSignal":
+        """Prevent structurally unproven signals entering the validated set.
+
+        Pydantic cannot know which caller constructed a model, so this is a
+        deliberately narrow structural guard rather than an authorization
+        mechanism.  The production signal path must also obtain these fields
+        from ``app.quant.backtest``; callers cannot mark a signal validated by
+        supplying only a boolean.
+        """
+        if not self.validated:
+            return self
+
+        if self.validation_method != "walk_forward_oos":
+            raise ValueError(
+                "validated QuantSignal facts require walk_forward_oos evidence"
+            )
+        if not self.validation_id:
+            raise ValueError("validated QuantSignal facts require validation_id")
+        if self.validation_oos_days is None or self.validation_oos_days < 504:
+            raise ValueError(
+                "validated QuantSignal facts require at least 504 OOS trading days"
+            )
+        if self.backtest_sharpe is None or self.backtest_sharpe < 1.0:
+            raise ValueError(
+                "validated QuantSignal facts require OOS Sharpe >= 1.0"
+            )
+        if self.backtest_max_drawdown is None or abs(self.backtest_max_drawdown) > 0.25:
+            raise ValueError(
+                "validated QuantSignal facts require maximum drawdown <= 25%"
+            )
+        return self
 
 
 class RiskFlag(BaseFact):
@@ -376,4 +425,34 @@ class OptionsSignal(BaseFact):
             "gate in app/quant/options_backtest.py. Never set by an LLM."
         ),
     )
+    validation_method: Optional[str] = Field(
+        None,
+        description="Validation protocol that produced this options signal.",
+    )
+    validation_oos_days: Optional[int] = Field(
+        None,
+        ge=0,
+        description="Number of out-of-sample trading days in the validation evidence.",
+    )
+    validation_id: Optional[str] = Field(
+        None,
+        description="Stable identifier for the options backtest evidence.",
+    )
     as_of: date = Field(..., description="Date the signal was computed for.")
+
+    @model_validator(mode="after")
+    def require_validation_evidence(self) -> "OptionsSignal":
+        """Require explicit evidence before an options signal is narratable."""
+        if not self.validated:
+            return self
+        if self.validation_method != "walk_forward_oos":
+            raise ValueError(
+                "validated OptionsSignal facts require walk_forward_oos evidence"
+            )
+        if not self.validation_id:
+            raise ValueError("validated OptionsSignal facts require validation_id")
+        if self.validation_oos_days is None or self.validation_oos_days < 504:
+            raise ValueError(
+                "validated OptionsSignal facts require at least 504 OOS trading days"
+            )
+        return self

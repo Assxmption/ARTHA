@@ -24,6 +24,9 @@ Reference: docs/ARTHA_ARCHITECTURE.md §5.4
 from __future__ import annotations
 
 import logging
+import hashlib
+import inspect
+import json
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -68,7 +71,7 @@ class BacktestMetrics:
         AGENTS.md Rule 6: Nothing reaches a report unvalidated.
         AGENTS.md Rule 8: No fixed return targets — Sharpe + drawdown only.
         """
-        self.is_valid = (
+        self.is_valid = bool(
             self.sharpe_ratio >= MIN_OOS_SHARPE
             and self.max_drawdown <= MAX_OOS_DRAWDOWN
             and self.num_trading_days >= MIN_OOS_TRADING_DAYS
@@ -83,11 +86,56 @@ class WalkForwardResult:
     in_sample_metrics: BacktestMetrics
     out_of_sample_metrics: BacktestMetrics
     fold_results: list[BacktestMetrics] = field(default_factory=list)
+    fold_boundaries: list[dict] = field(default_factory=list)
+    failed_folds: list[dict] = field(default_factory=list)
+    expected_oos_days: int = 0
     is_validated: bool = False  # Overall validation flag
+
+    @property
+    def validation_id(self) -> str:
+        """Return a stable ID for the exact validation result."""
+        payload = {
+            "strategy_name": self.strategy_name,
+            "oos": self.out_of_sample_metrics.__dict__,
+            "folds": [fold.__dict__ for fold in self.fold_results],
+            "fold_boundaries": self.fold_boundaries,
+            "failed_folds": self.failed_folds,
+            "expected_oos_days": self.expected_oos_days,
+        }
+        digest = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()[:16]
+        return f"wf-{digest}"
+
+    def evidence(self) -> dict:
+        """Return serialisable evidence suitable for a Fact Store signal."""
+        return {
+            "validation_method": "walk_forward_oos",
+            "validation_id": self.validation_id,
+            "validation_oos_days": self.out_of_sample_metrics.num_trading_days,
+            "backtest_sharpe": self.out_of_sample_metrics.sharpe_ratio,
+            "backtest_sortino": self.out_of_sample_metrics.sortino_ratio,
+            "backtest_max_drawdown": self.out_of_sample_metrics.max_drawdown,
+            "validated": self.is_validated,
+            "fold_boundaries": self.fold_boundaries,
+            "failed_folds": self.failed_folds,
+            "coverage_complete": self.coverage_complete,
+        }
+
+    @property
+    def coverage_complete(self) -> bool:
+        """Whether every requested OOS observation was evaluated exactly once."""
+        return (
+            not self.failed_folds
+            and (
+                self.expected_oos_days == 0
+                or self.out_of_sample_metrics.num_trading_days == self.expected_oos_days
+            )
+        )
 
     def validate(self) -> bool:
         """Validate based on OOS metrics."""
-        self.is_validated = self.out_of_sample_metrics.validate()
+        self.is_validated = self.coverage_complete and self.out_of_sample_metrics.validate()
         return self.is_validated
 
 
@@ -233,6 +281,22 @@ def apply_transaction_costs(
 
 # ── Walk-Forward Engine ─────────────────────────────────────────────────────────
 
+def _generate_signals(signal_generator, train_data: pd.Series, target_index: pd.Index) -> pd.Series:
+    """Invoke a signal generator without masking its internal exceptions."""
+    parameters = inspect.signature(signal_generator).parameters
+    oos_parameter = parameters.get("oos_index")
+    if oos_parameter is not None and oos_parameter.kind == inspect.Parameter.KEYWORD_ONLY:
+        return signal_generator(train_data, oos_index=target_index)
+    accepts_second_argument = (
+        len(parameters) >= 2
+        or any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in parameters.values())
+        or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters.values())
+    )
+    return (
+        signal_generator(train_data, target_index)
+        if accepts_second_argument else signal_generator(train_data)
+    )
+
 def walk_forward_backtest(
     returns: pd.Series,
     signal_generator,
@@ -240,6 +304,8 @@ def walk_forward_backtest(
     n_folds: int = 5,
     train_ratio: float = 0.6,
     risk_free_rate: float = 0.06,
+    brokerage_bps: float = DEFAULT_BROKERAGE_BPS,
+    impact_bps: float = DEFAULT_IMPACT_BPS,
 ) -> WalkForwardResult:
     """
     Anchored walk-forward backtest.
@@ -254,8 +320,10 @@ def walk_forward_backtest(
     returns : pd.Series
         Daily asset returns indexed by date.
     signal_generator : callable
-        Function(train_returns: pd.Series) → pd.Series of signals.
-        The returned signals must be indexed on the OOS period dates.
+        Function ``(train_returns, oos_index) -> pd.Series`` of signals. The
+        returned signals must have exactly the requested OOS index. A legacy
+        one-argument callable is accepted only when it already returns the
+        exact OOS index; IS-period signals are never forward-filled.
     strategy_name : str
         Label for the strategy.
     n_folds : int
@@ -264,6 +332,8 @@ def walk_forward_backtest(
         Fraction of total data used for initial training.
     risk_free_rate : float
         Risk-free rate for Sharpe computation.
+    brokerage_bps, impact_bps : float
+        Costs applied on signal changes inside every OOS fold.
 
     Returns
     -------
@@ -287,9 +357,11 @@ def walk_forward_backtest(
             out_of_sample_metrics=empty,
         )
 
-    # Determine fold boundaries
+    # Determine fold boundaries. Integer division previously discarded the
+    # remainder of the OOS sample; these boundaries account for every date.
     initial_train = int(n * train_ratio)
-    oos_size = (n - initial_train) // n_folds
+    total_oos = n - initial_train
+    oos_size = total_oos // n_folds
 
     if oos_size < 20:
         # Not enough data for meaningful folds — use a single IS/OOS split
@@ -297,31 +369,50 @@ def walk_forward_backtest(
         oos_size = n - initial_train
 
     fold_results: list[BacktestMetrics] = []
+    fold_boundaries: list[dict] = []
+    failed_folds: list[dict] = []
     all_oos_returns: list[pd.Series] = []
 
     for fold in range(n_folds):
-        train_end = initial_train + fold * oos_size
+        train_end = initial_train + (total_oos * fold) // n_folds
         oos_start = train_end
-        oos_end = min(oos_start + oos_size, n)
+        oos_end = initial_train + (total_oos * (fold + 1)) // n_folds
 
         if oos_start >= n or oos_end <= oos_start:
             break
 
         train_data = returns.iloc[:train_end]
         oos_data = returns.iloc[oos_start:oos_end]
+        boundary = {
+            "fold": fold,
+            "train_start": str(train_data.index[0]),
+            "train_end": str(train_data.index[-1]),
+            "oos_start": str(oos_data.index[0]),
+            "oos_end": str(oos_data.index[-1]),
+            "oos_days": len(oos_data),
+        }
+        fold_boundaries.append(boundary)
 
         try:
-            # Generate signals using training data
-            signals = signal_generator(train_data)
+            # Generate signals using training data. The strict index check is
+            # deliberate: an IS signal must never be forward-filled into OOS.
+            signals = _generate_signals(signal_generator, train_data, oos_data.index)
+            if not isinstance(signals, pd.Series):
+                raise TypeError("signal_generator must return a pandas Series")
+            if not signals.index.equals(oos_data.index):
+                raise ValueError(
+                    "signal_generator must return exactly the requested OOS index"
+                )
+            if signals.isna().any():
+                raise ValueError("signal_generator returned NaN OOS signals")
 
-            # Apply signals to OOS returns
-            # Align signals to OOS period
-            common_idx = oos_data.index.intersection(signals.index)
-            if len(common_idx) == 0:
-                # Signal generator returned IS-period signals — apply to OOS directly
-                oos_returns = oos_data * signals.reindex(oos_data.index, method="ffill").fillna(0)
-            else:
-                oos_returns = oos_data.loc[common_idx] * signals.loc[common_idx]
+            gross_oos_returns = oos_data * pd.to_numeric(signals, errors="raise")
+            oos_returns = apply_transaction_costs(
+                gross_oos_returns,
+                pd.to_numeric(signals, errors="raise"),
+                brokerage_bps=brokerage_bps,
+                impact_bps=impact_bps,
+            )
 
             fold_metrics = compute_metrics(oos_returns, risk_free_rate=risk_free_rate)
             fold_results.append(fold_metrics)
@@ -329,7 +420,7 @@ def walk_forward_backtest(
 
         except Exception as e:
             logger.error("Walk-forward fold %d failed: %s", fold, e)
-            continue
+            failed_folds.append({**boundary, "error": str(e)})
 
     # Aggregate OOS metrics
     if all_oos_returns:
@@ -343,15 +434,33 @@ def walk_forward_backtest(
             volatility=0, avg_trade_return=0, profit_factor=0,
         )
 
-    # In-sample metrics (full training period)
-    is_returns = returns.iloc[:initial_train]
-    is_metrics = compute_metrics(is_returns, risk_free_rate=risk_free_rate)
+    # In-sample metrics use the same strategy contract when the generator can
+    # produce an exact training-index signal. If it cannot, leave IS metrics
+    # empty rather than reporting raw asset returns as strategy performance.
+    is_data = returns.iloc[:initial_train]
+    try:
+        is_signals = _generate_signals(signal_generator, is_data, is_data.index)
+        if not isinstance(is_signals, pd.Series) or not is_signals.index.equals(is_data.index):
+            raise ValueError("in-sample signal index is incomplete")
+        is_returns = apply_transaction_costs(
+            is_data * pd.to_numeric(is_signals, errors="raise"),
+            pd.to_numeric(is_signals, errors="raise"),
+            brokerage_bps=brokerage_bps,
+            impact_bps=impact_bps,
+        )
+        is_metrics = compute_metrics(is_returns, risk_free_rate=risk_free_rate)
+    except Exception as e:
+        logger.warning("In-sample strategy metrics unavailable: %s", e)
+        is_metrics = compute_metrics(pd.Series(dtype=float), risk_free_rate=risk_free_rate)
 
     result = WalkForwardResult(
         strategy_name=strategy_name,
         in_sample_metrics=is_metrics,
         out_of_sample_metrics=oos_metrics,
         fold_results=fold_results,
+        fold_boundaries=fold_boundaries,
+        failed_folds=failed_folds,
+        expected_oos_days=total_oos,
     )
 
     # Validate

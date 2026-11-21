@@ -1,18 +1,17 @@
 """
-Tiered LLM Router — With Per-Key Groq Rotation
+Tiered LLM Router — Honest Provider Failover
 ================================================
-Three tiers (cheap/mid/deep) with real per-key rotation on Groq:
-when key N hits a 429, rotate to key N+1 from the comma-separated
-GROQ_API_KEY list. Only after ALL keys are exhausted does the
-system failover to the next provider (Gemini → Ollama).
+Three tiers (cheap/mid/deep) with provider failover.  A single Groq key is
+used per account; a 429 cools that provider and moves to the next provider
+instead of pretending that multiple keys create additional quota.
 
 Design (AGENTS.md rules 3, 4):
   - Cheap (8B-class): Orchestrator, Fundamentals Agent, Quant Narrator,
     Sentiment Agent — high-quota, low-cost.
   - Mid: Risk Agent — slightly more capable for nuanced compliance checks.
   - Deep: Writer Agent — final synthesis, used once per job.
-  - Per-key rotation: each Groq key is tried individually on 429.
-  - Cross-provider failover: Groq → Gemini → local Ollama.
+  - One Groq key per account; no quota multiplication through key rotation.
+  - Cross-provider failover: configured provider → next provider → Ollama.
   - Jittered exponential backoff on real 429s.
 
 Reference: docs/ARTHA_ARCHITECTURE.md §4.6
@@ -50,13 +49,15 @@ class ModelTier(str, Enum):
     DEEP = "deep"
 
 
-# ── Groq Key Manager — per-key rotation on rate limit ───────────────────────────
+# ── Groq Provider Cooldown ──────────────────────────────────────────────────────
 
 class GroqKeyManager:
     """
-    Manages multiple Groq API keys from a comma-separated env var.
-    Rotates to the next key when the current one hits a rate limit.
-    Tracks cooldown per key so exhausted keys get retried after a wait.
+    Manages one Groq API key and its provider cooldown.
+
+    A comma-separated value is accepted for backwards compatibility, but only
+    the first key is used.  Keys from the same provider account share the
+    organization's quota and must not be used as a rate-limit workaround.
     
     Thread-safe — multiple agents can request keys concurrently.
     """
@@ -66,15 +67,20 @@ class GroqKeyManager:
 
     def __init__(self):
         raw = os.getenv("GROQ_API_KEY", "").strip()
-        self._keys = [k.strip() for k in raw.split(",") if k.strip()]
+        configured_keys = [k.strip() for k in raw.split(",") if k.strip()]
+        self._keys = configured_keys[:1]
         self._current_index = 0
         self._cooldowns: dict[int, datetime] = {}  # key_index → cooldown_until
         self._lock = threading.Lock()
 
         if self._keys:
+            if len(configured_keys) > 1:
+                logger.warning(
+                    "Multiple GROQ_API_KEY values configured; using one key only "
+                    "because provider quotas are organization-scoped"
+                )
             logger.info(
-                "GroqKeyManager: loaded %d keys, rotating on 429",
-                len(self._keys),
+                "Groq provider configured with one account key",
             )
         else:
             logger.warning("GroqKeyManager: no GROQ_API_KEY found")
@@ -90,7 +96,7 @@ class GroqKeyManager:
 
         with self._lock:
             now = datetime.now()
-            # Try each key starting from current index
+            # There is deliberately only one account key.
             for offset in range(len(self._keys)):
                 idx = (self._current_index + offset) % len(self._keys)
                 cooldown_until = self._cooldowns.get(idx)
@@ -99,20 +105,20 @@ class GroqKeyManager:
                     self._current_index = idx
                     return self._keys[idx]
 
-            # All keys are in cooldown — return the one that expires soonest
+            # The provider is in cooldown; caller must fail over.
             soonest_idx = min(
                 self._cooldowns, key=lambda i: self._cooldowns[i]
             )
             wait_seconds = (self._cooldowns[soonest_idx] - now).total_seconds()
             logger.warning(
-                "All %d Groq keys in cooldown. Soonest available in %.0fs (key %d)",
-                len(self._keys), max(0, wait_seconds), soonest_idx + 1,
+                "Groq provider in cooldown. Soonest retry in %.0fs",
+                max(0, wait_seconds),
             )
             return None  # Signal to try next provider
 
     def mark_rate_limited(self, key: str) -> Optional[str]:
         """
-        Mark a key as rate-limited and rotate to the next one.
+        Mark the provider as rate-limited.
         
         Returns the next available key, or None if all keys are cooling down.
         """
@@ -132,13 +138,12 @@ class GroqKeyManager:
                 idx + 1, len(self._keys), self.KEY_COOLDOWN_SECONDS,
             )
 
-            # Move to next key
-            self._current_index = (idx + 1) % len(self._keys)
+            self._current_index = 0
 
         return self.get_current_key()
 
     def get_all_available_keys(self) -> list[str]:
-        """Get all keys not currently in cooldown (for provider expansion)."""
+        """Return the account key when the provider is not in cooldown."""
         now = datetime.now()
         with self._lock:
             return [
@@ -219,7 +224,7 @@ def _jittered_backoff(attempt: int) -> float:
 def _get_api_key(provider: str) -> Optional[str]:
     """
     Resolve an API key for a provider.
-    For Groq: uses the key manager (per-key rotation).
+    For Groq: uses the single-account-key cooldown manager.
     For Gemini: reads GEMINI_API_KEY directly.
     """
     if provider == "groq":
@@ -238,8 +243,7 @@ def get_llm(tier: ModelTier = ModelTier.CHEAP):
     Build and return a CrewAI-compatible LLM instance for the given tier.
 
     For Groq providers: tries each comma-separated key individually.
-    When a key 429s, the GroqKeyManager rotates to the next key.
-    Only after all Groq keys are exhausted does it failover to Gemini.
+    When Groq 429s, the provider is cooled down and the chain fails over.
 
     Parameters
     ----------
@@ -276,7 +280,7 @@ def get_llm(tier: ModelTier = ModelTier.CHEAP):
                         api_key=key,
                         max_tokens=provider_config["max_tokens"],
                         temperature=provider_config["temperature"],
-                        num_retries=2,  # Low retries per key — rotate instead
+                        num_retries=2,  # Low retries; provider failover handles 429s
                         timeout=180,
                     )
                     key_idx = _groq_keys._keys.index(key) + 1
@@ -345,14 +349,14 @@ def get_llm(tier: ModelTier = ModelTier.CHEAP):
 
 def mark_key_exhausted(api_key: str):
     """
-    Call this when a runtime 429 occurs during an LLM call.
-    Rotates to the next Groq key for subsequent calls.
+    Call this when a runtime 429 occurs during a Groq LLM call.
+    Cools the Groq provider for subsequent calls so the chain can fail over.
     """
     _groq_keys.mark_rate_limited(api_key)
 
 
 def get_key_status() -> dict:
-    """Get current status of all Groq keys (for debugging/monitoring)."""
+    """Get Groq provider cooldown status for debugging/monitoring."""
     now = datetime.now()
     statuses = []
     for i, key in enumerate(_groq_keys._keys):
