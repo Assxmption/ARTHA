@@ -2,7 +2,7 @@
   <h1>ARTHA</h1>
   <p><strong>Indian Markets (NSE) & Commodities (MCX) Intelligence System</strong></p>
   <p>
-    <img alt="Tests" src="https://img.shields.io/badge/tests-701%20passed-brightgreen" />
+    <img alt="Tests" src="https://img.shields.io/badge/tests-752%20passed-brightgreen" />
     <img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue" />
     <img alt="License" src="https://img.shields.io/badge/license-MIT-green" />
   </p>
@@ -105,7 +105,7 @@ This runs all components end-to-end on synthetic data:
 ### Run Tests
 ```bash
 python -m pytest tests/ -v --tb=short
-# → 701 passed, 2 skipped
+# → 752 passed, 2 skipped
 ```
 
 ### Run the Backend
@@ -171,7 +171,7 @@ artha/
 │   ├── run_10yr_oos_validation.py
 │   ├── run_real_sleeve_matrix.py
 │   └── run_repeated_sleeve_validation.py
-├── tests/                       # 701 tests
+├── tests/                       # 752 tests
 ├── data_cache/
 │   ├── nse/security_master.json #   65+ securities with listing dates
 │   └── mcx/contracts.json       #   17 commodity futures contracts

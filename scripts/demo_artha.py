@@ -229,7 +229,7 @@ def main() -> None:
     ✅  Paper Trading Daemon    (SQLite-backed virtual execution)
     ✅  Fact Store              (typed Pydantic state with full traceability)
 
-  Test suite: 701 passed, 2 skipped
+  Test suite: 752 passed, 2 skipped
   Architecture: docs/ARTHA_ARCHITECTURE.md
   Validation:   docs/backtest_reports/
 
