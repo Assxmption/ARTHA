@@ -1000,7 +1000,7 @@ if __name__ == "__main__":
         "HINDUNILVR", "ITC", "SBIN", "BHARTIARTL", "KOTAKBANK",
         "LT", "HCLTECH", "AXISBANK", "ASIANPAINT", "MARUTI",
         "SUNPHARMA", "TITAN", "ULTRACEMCO", "BAJFINANCE", "WIPRO",
-        "NESTLEIND", "M&M", "TATAMOTORS", "POWERGRID", "NTPC",
+        "NESTLEIND", "M&M", "TMPV", "POWERGRID", "NTPC",
     ]
     
     # Download data

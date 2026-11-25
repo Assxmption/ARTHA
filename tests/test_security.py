@@ -103,10 +103,8 @@ class TestRouteAuthentication:
     """Route dependencies must match the middleware's dev/prod policy."""
 
     def test_development_without_credentials_is_usable(self, monkeypatch):
-        import app.security.auth as auth_module
-
         monkeypatch.setenv("AUTH_REQUIRED", "false")
-        monkeypatch.setattr(auth_module, "SUPABASE_JWT_SECRET", "")
+        monkeypatch.delenv("SUPABASE_JWT_SECRET", raising=False)
         assert get_current_user(None)["role"] == "development"
 
     def test_production_without_credentials_fails_closed(self, monkeypatch):
@@ -116,3 +114,52 @@ class TestRouteAuthentication:
         with pytest.raises(HTTPException) as exc:
             get_current_user(None)
         assert exc.value.status_code == 401
+
+
+def test_csp_allows_the_configured_supabase_origin_only(monkeypatch):
+    """The SPA signs in against Supabase from the browser; CSP must permit exactly that origin."""
+    from app.security import _supabase_connect_sources
+
+    monkeypatch.setenv("SUPABASE_URL", "https://abcdefghijklmnop.supabase.co")
+    sources = _supabase_connect_sources()
+    assert sources == "https://abcdefghijklmnop.supabase.co wss://abcdefghijklmnop.supabase.co"
+
+
+def test_csp_rejects_non_https_supabase_url(monkeypatch, tmp_path):
+    import app.security as sec
+
+    monkeypatch.setenv("SUPABASE_URL", "http://evil.example.com")
+    monkeypatch.delenv("VITE_SUPABASE_URL", raising=False)
+    # Falls back to Supabase-hosted projects only — never an arbitrary host.
+    assert sec._supabase_connect_sources() == "https://*.supabase.co wss://*.supabase.co"
+
+
+def test_served_csp_header_includes_supabase_in_connect_src(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    monkeypatch.setenv("SUPABASE_URL", "https://abcdefghijklmnop.supabase.co")
+    csp = TestClient(app).get("/api/health").headers["content-security-policy"]
+    connect = next(d for d in csp.split(";") if d.strip().startswith("connect-src"))
+    assert "https://abcdefghijklmnop.supabase.co" in connect and "'self'" in connect
+    assert " * " not in f" {connect} "
+
+
+@pytest.mark.parametrize("env, expected", [("development", (600, 40)), ("production", (60, 10))])
+def test_rate_limit_defaults_depend_on_environment(monkeypatch, env, expected):
+    from app.security import RateLimiterMiddleware
+
+    monkeypatch.setenv("APP_ENV", env)
+    monkeypatch.delenv("RATE_LIMIT_RPM", raising=False)
+    monkeypatch.delenv("RATE_LIMIT_BURST", raising=False)
+    mw = RateLimiterMiddleware(app=lambda *a: None)
+    assert (mw.rpm, mw.burst) == expected
+
+
+def test_rate_limit_env_override_wins(monkeypatch):
+    from app.security import RateLimiterMiddleware
+
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("RATE_LIMIT_RPM", "30")
+    assert RateLimiterMiddleware(app=lambda *a: None).rpm == 30

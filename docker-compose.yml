@@ -1,24 +1,29 @@
-version: "3.9"
-
 services:
-  research-assistant:
-    build: .
-    container_name: mara-api
+  artha:
+    build:
+      context: .
+      args:
+        # Public browser values for the frontend build (optional).
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+    container_name: artha-api
     ports:
       - "8000:8000"
-    volumes:
-      - ./data:/app/data
-      - ./.env:/app/.env
+    env_file:
+      - .env            # runtime secrets; never copied into the image
     environment:
       - APP_HOST=0.0.0.0
       - APP_PORT=8000
+    volumes:
+      - ./data:/app/data
+      - artha_cache:/app/data_cache   # seeded from the image on first start
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
 volumes:
-  data:
+  artha_cache:

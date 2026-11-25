@@ -24,10 +24,12 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
-from app.crew.analysis_crew import AnalysisCrew
+from app.llm.keys import KeyFormatError, LLMKeyRequired, UserKeys, keys_from_headers, redact, resolve_access, use_keys
+from app.security.auth import get_current_user
+from app.security.net import client_ip
 from app.schemas.models import (
     AnalysisJobStatus,
     AnalysisRequest,
@@ -43,13 +45,34 @@ _analysis_progress: dict[str, list[str]] = {}
 
 # Thread pool for analysis (blocking I/O + LLM calls)
 _executor = ThreadPoolExecutor(max_workers=2)
-_crew = AnalysisCrew()
+class _LazyCrew:
+    """Build the crew (crewai, chromadb, …: ~100 MB) on first use, not at app start."""
+
+    _instance = None
+    _lock = __import__("threading").Lock()
+
+    def __getattr__(self, name):
+        if _LazyCrew._instance is None:
+            with _LazyCrew._lock:
+                if _LazyCrew._instance is None:
+                    from app.crew.analysis_crew import AnalysisCrew
+
+                    _LazyCrew._instance = AnalysisCrew()
+        return getattr(_LazyCrew._instance, name)
+
+
+_crew = _LazyCrew()
 
 
 # ── Start Analysis ─────────────────────────────────────────────────────────────
 
 @router.post("/api/analyze", response_model=AnalysisResponse, tags=["Analysis"])
-async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundTasks):
+async def start_analysis(
+    request: AnalysisRequest,
+    background_tasks: BackgroundTasks,
+    http_request: Request,
+    user=Depends(get_current_user),
+):
     """
     Start an ARTHA analysis job for an NSE symbol.
 
@@ -62,6 +85,23 @@ async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundT
     """
     symbol = request.symbol.upper().strip()
     job_id = f"analysis_{symbol}_{uuid.uuid4().hex[:8]}"
+
+    # Whose keys pay for the LLM stages: the visitor's own (BYOK) or the
+    # owner's under the demo quota. A data-only run (skip_llm) costs nothing.
+    keys = UserKeys()
+    if not request.skip_llm:
+        try:
+            user_keys = keys_from_headers(http_request.headers)
+        except KeyFormatError as e:
+            raise HTTPException(400, {"code": "LLM_KEY_INVALID", "message": str(e)})
+        visitor = (user or {}).get("sub")
+        if not visitor or visitor == "anonymous":
+            visitor = f"ip:{client_ip(http_request)}"
+        try:
+            access = resolve_access(user_keys, visitor)
+        except LLMKeyRequired as e:
+            raise HTTPException(402, {"code": "LLM_KEY_REQUIRED", "message": e.reason})
+        keys = access.keys or UserKeys()
 
     _analysis_jobs[job_id] = {
         "job_id": job_id,
@@ -79,7 +119,7 @@ async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundT
     ]
 
     background_tasks.add_task(
-        _run_analysis_job, job_id, symbol, request.skip_llm
+        _run_analysis_job, job_id, symbol, request.skip_llm, keys
     )
 
     return AnalysisResponse(
@@ -190,24 +230,26 @@ def _on_analysis_progress(job_id: str, stage: str, message: str):
         _analysis_jobs[job_id]["current_stage"] = stage
 
 
-async def _run_analysis_job(job_id: str, symbol: str, skip_llm: bool):
+async def _run_analysis_job(job_id: str, symbol: str, skip_llm: bool, keys: UserKeys = UserKeys()):
     """Run the analysis crew in a background thread."""
     _analysis_jobs[job_id]["status"] = "running"
     _analysis_progress[job_id].append(
         f"[{datetime.utcnow().strftime('%H:%M:%S')}] [SYSTEM] Pipeline starting..."
     )
 
-    loop = asyncio.get_event_loop()
-    try:
-        result = await loop.run_in_executor(
-            _executor,
-            lambda: _crew.run(
+    def _run():
+        # Visitor keys live only in this thread's context for this one job.
+        with use_keys(keys):
+            return _crew.run(
                 symbol=symbol,
                 job_id=job_id,
                 skip_llm=skip_llm,
                 on_progress=lambda stage, msg: _on_analysis_progress(job_id, stage, msg),
-            ),
-        )
+            )
+
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(_executor, _run)
 
         _analysis_jobs[job_id].update({
             "status": result.get("status", "completed"),
@@ -219,7 +261,8 @@ async def _run_analysis_job(job_id: str, symbol: str, skip_llm: bool):
         })
 
     except Exception as e:
-        logger.exception("Analysis job %s failed", job_id)
+        e = RuntimeError(redact(str(e), keys))
+        logger.error("Analysis job %s failed: %s", job_id, e)
         durable = _crew.store.get_job_state(job_id) or {}
         _crew.store.upsert_job(
             job_id=job_id,

@@ -203,7 +203,13 @@ def get_option_chain(symbol: str) -> dict:
     """
     raw = None
     source = "none"
-    
+
+    # Kite Connect first: exchange data via the broker API (NSE blocks scraping).
+    from app.data.kite_options import get_option_chain_kite
+    kite_chain = get_option_chain_kite(symbol)
+    if kite_chain:
+        return kite_chain
+
     # Try nselib first
     raw = fetch_option_chain_nselib(symbol)
     if raw:

@@ -153,6 +153,21 @@
   animation: marquee 30s linear infinite;
 }
 
+/* Top-bar ticker: the track holds the items twice and slides by half its
+   width, so the loop is seamless. Duration is set from the measured width
+   (constant pixel speed whatever the item count). */
+.ticker-track {
+  animation: marquee var(--ticker-duration, 120s) linear infinite;
+  will-change: transform;
+}
+.ticker-wrap:hover .ticker-track,
+.ticker-wrap:focus-within .ticker-track {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ticker-track { animation: none; }
+}
+
 .mask-image-fade {
   mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
   -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);

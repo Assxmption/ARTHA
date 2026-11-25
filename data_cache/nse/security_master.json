@@ -1,0 +1,417 @@
+{
+ "schema_version": "nse_security_master_v1",
+ "description": "Point-in-time NSE security master for ARTHA historical research. Listing dates are from NSE official records. Delisted/merged securities are included with delisted_on dates. This master covers current NIFTY-50 constituents plus key historical members that have been removed due to M&A, delistings, or index rebalancing.",
+ "last_updated": "2026-11-24",
+ "records": [
+  {
+   "security_id": "NSE-RELIANCE",
+   "canonical_symbol": "RELIANCE",
+   "listed_from": "1995-11-29",
+   "aliases": "RELIANCE INDUSTRIES"
+  },
+  {
+   "security_id": "NSE-TCS",
+   "canonical_symbol": "TCS",
+   "listed_from": "2004-08-25",
+   "aliases": "TATA CONSULTANCY"
+  },
+  {
+   "security_id": "NSE-HDFCBANK",
+   "canonical_symbol": "HDFCBANK",
+   "listed_from": "2001-06-07",
+   "aliases": "HDFC BANK"
+  },
+  {
+   "security_id": "NSE-INFY",
+   "canonical_symbol": "INFY",
+   "listed_from": "1999-02-11",
+   "aliases": "INFOSYS"
+  },
+  {
+   "security_id": "NSE-ICICIBANK",
+   "canonical_symbol": "ICICIBANK",
+   "listed_from": "1997-09-17",
+   "aliases": "ICICI BANK"
+  },
+  {
+   "security_id": "NSE-HINDUNILVR",
+   "canonical_symbol": "HINDUNILVR",
+   "listed_from": "1995-07-06",
+   "aliases": "HUL;HINDUSTAN UNILEVER"
+  },
+  {
+   "security_id": "NSE-ITC",
+   "canonical_symbol": "ITC",
+   "listed_from": "1995-08-23"
+  },
+  {
+   "security_id": "NSE-SBIN",
+   "canonical_symbol": "SBIN",
+   "listed_from": "1995-02-28",
+   "aliases": "STATE BANK;SBI"
+  },
+  {
+   "security_id": "NSE-BHARTIARTL",
+   "canonical_symbol": "BHARTIARTL",
+   "listed_from": "2002-02-15",
+   "aliases": "BHARTI AIRTEL;AIRTEL"
+  },
+  {
+   "security_id": "NSE-KOTAKBANK",
+   "canonical_symbol": "KOTAKBANK",
+   "listed_from": "2003-12-20",
+   "aliases": "KOTAK MAHINDRA BANK"
+  },
+  {
+   "security_id": "NSE-LT",
+   "canonical_symbol": "LT",
+   "listed_from": "1995-06-01",
+   "aliases": "LARSEN;L&T"
+  },
+  {
+   "security_id": "NSE-AXISBANK",
+   "canonical_symbol": "AXISBANK",
+   "listed_from": "1998-11-16",
+   "aliases": "AXIS BANK;UTI BANK"
+  },
+  {
+   "security_id": "NSE-BAJFINANCE",
+   "canonical_symbol": "BAJFINANCE",
+   "listed_from": "2007-04-02",
+   "aliases": "BAJAJ FINANCE"
+  },
+  {
+   "security_id": "NSE-ASIANPAINT",
+   "canonical_symbol": "ASIANPAINT",
+   "listed_from": "1995-05-26",
+   "aliases": "ASIAN PAINTS"
+  },
+  {
+   "security_id": "NSE-MARUTI",
+   "canonical_symbol": "MARUTI",
+   "listed_from": "2003-07-09",
+   "aliases": "MARUTI SUZUKI"
+  },
+  {
+   "security_id": "NSE-TITAN",
+   "canonical_symbol": "TITAN",
+   "listed_from": "2000-10-19",
+   "aliases": "TITAN COMPANY"
+  },
+  {
+   "security_id": "NSE-SUNPHARMA",
+   "canonical_symbol": "SUNPHARMA",
+   "listed_from": "1997-02-08",
+   "aliases": "SUN PHARMA"
+  },
+  {
+   "security_id": "NSE-TATAMOTORS",
+   "canonical_symbol": "TMPV",
+   "listed_from": "1998-07-22",
+   "aliases": "TATAMOTORS;TATA MOTORS PASSENGER VEHICLES;TATA MOTORS PASS VEH",
+   "note": "Renamed from TATAMOTORS after the CV demerger; same listing (Kite instrument 884737, Yahoo history from 1991). Verified 2026-11-24."
+  },
+  {
+   "security_id": "NSE-NTPC",
+   "canonical_symbol": "NTPC",
+   "listed_from": "2004-11-05"
+  },
+  {
+   "security_id": "NSE-ULTRACEMCO",
+   "canonical_symbol": "ULTRACEMCO",
+   "listed_from": "2004-08-24",
+   "aliases": "ULTRATECH CEMENT"
+  },
+  {
+   "security_id": "NSE-WIPRO",
+   "canonical_symbol": "WIPRO",
+   "listed_from": "1995-11-08"
+  },
+  {
+   "security_id": "NSE-POWERGRID",
+   "canonical_symbol": "POWERGRID",
+   "listed_from": "2007-10-05",
+   "aliases": "POWER GRID"
+  },
+  {
+   "security_id": "NSE-ONGC",
+   "canonical_symbol": "ONGC",
+   "listed_from": "1995-07-19"
+  },
+  {
+   "security_id": "NSE-TATASTEEL",
+   "canonical_symbol": "TATASTEEL",
+   "listed_from": "1998-07-22",
+   "aliases": "TATA STEEL"
+  },
+  {
+   "security_id": "NSE-JSWSTEEL",
+   "canonical_symbol": "JSWSTEEL",
+   "listed_from": "2005-03-28",
+   "aliases": "JSW STEEL"
+  },
+  {
+   "security_id": "NSE-M&M",
+   "canonical_symbol": "M&M",
+   "listed_from": "1996-01-03",
+   "aliases": "MAHINDRA"
+  },
+  {
+   "security_id": "NSE-HCLTECH",
+   "canonical_symbol": "HCLTECH",
+   "listed_from": "2000-01-06",
+   "aliases": "HCL TECH"
+  },
+  {
+   "security_id": "NSE-ADANIENT",
+   "canonical_symbol": "ADANIENT",
+   "listed_from": "2013-02-08",
+   "aliases": "ADANI ENTERPRISES"
+  },
+  {
+   "security_id": "NSE-ADANIPORTS",
+   "canonical_symbol": "ADANIPORTS",
+   "listed_from": "2007-11-27",
+   "aliases": "ADANI PORTS"
+  },
+  {
+   "security_id": "NSE-COALINDIA",
+   "canonical_symbol": "COALINDIA",
+   "listed_from": "2010-11-04",
+   "aliases": "COAL INDIA"
+  },
+  {
+   "security_id": "NSE-BAJAJFINSV",
+   "canonical_symbol": "BAJAJFINSV",
+   "listed_from": "2007-04-02",
+   "aliases": "BAJAJ FINSERV"
+  },
+  {
+   "security_id": "NSE-BAJAJ-AUTO",
+   "canonical_symbol": "BAJAJ-AUTO",
+   "listed_from": "2008-05-26",
+   "aliases": "BAJAJ AUTO;BAJAJ_AUTO"
+  },
+  {
+   "security_id": "NSE-NESTLEIND",
+   "canonical_symbol": "NESTLEIND",
+   "listed_from": "1995-01-13",
+   "aliases": "NESTLE INDIA"
+  },
+  {
+   "security_id": "NSE-TECHM",
+   "canonical_symbol": "TECHM",
+   "listed_from": "2006-08-28",
+   "aliases": "TECH MAHINDRA"
+  },
+  {
+   "security_id": "NSE-DRREDDY",
+   "canonical_symbol": "DRREDDY",
+   "listed_from": "1996-05-31",
+   "aliases": "DR REDDYS"
+  },
+  {
+   "security_id": "NSE-CIPLA",
+   "canonical_symbol": "CIPLA",
+   "listed_from": "1995-02-08"
+  },
+  {
+   "security_id": "NSE-DIVISLAB",
+   "canonical_symbol": "DIVISLAB",
+   "listed_from": "2003-03-19",
+   "aliases": "DIVIS LAB"
+  },
+  {
+   "security_id": "NSE-BRITANNIA",
+   "canonical_symbol": "BRITANNIA",
+   "listed_from": "1998-11-05",
+   "aliases": "BRITANNIA INDUSTRIES"
+  },
+  {
+   "security_id": "NSE-APOLLOHOSP",
+   "canonical_symbol": "APOLLOHOSP",
+   "listed_from": "1995-08-10",
+   "aliases": "APOLLO HOSPITALS"
+  },
+  {
+   "security_id": "NSE-EICHERMOT",
+   "canonical_symbol": "EICHERMOT",
+   "listed_from": "2002-09-05",
+   "aliases": "EICHER MOTORS"
+  },
+  {
+   "security_id": "NSE-INDUSINDBK",
+   "canonical_symbol": "INDUSINDBK",
+   "listed_from": "1998-01-28",
+   "aliases": "INDUSIND BANK"
+  },
+  {
+   "security_id": "NSE-SBILIFE",
+   "canonical_symbol": "SBILIFE",
+   "listed_from": "2017-10-03",
+   "aliases": "SBI LIFE"
+  },
+  {
+   "security_id": "NSE-BPCL",
+   "canonical_symbol": "BPCL",
+   "listed_from": "1995-09-13"
+  },
+  {
+   "security_id": "NSE-GRASIM",
+   "canonical_symbol": "GRASIM",
+   "listed_from": "1995-05-30",
+   "aliases": "GRASIM INDUSTRIES"
+  },
+  {
+   "security_id": "NSE-HEROMOTOCO",
+   "canonical_symbol": "HEROMOTOCO",
+   "listed_from": "2001-04-11",
+   "aliases": "HERO MOTOCORP;HERO HONDA"
+  },
+  {
+   "security_id": "NSE-TRENT",
+   "canonical_symbol": "TRENT",
+   "listed_from": "2004-10-20",
+   "aliases": "TRENT LTD"
+  },
+  {
+   "security_id": "NSE-SHRIRAMFIN",
+   "canonical_symbol": "SHRIRAMFIN",
+   "listed_from": "1996-02-19",
+   "aliases": "SHRIRAM FINANCE"
+  },
+  {
+   "security_id": "NSE-BEL",
+   "canonical_symbol": "BEL",
+   "listed_from": "2008-09-24",
+   "aliases": "BHARAT ELECTRONICS"
+  },
+  {
+   "security_id": "NSE-HINDALCO",
+   "canonical_symbol": "HINDALCO",
+   "listed_from": "1997-12-19",
+   "aliases": "HINDALCO INDUSTRIES"
+  },
+  {
+   "security_id": "NSE-LIC",
+   "canonical_symbol": "LICI",
+   "listed_from": "2022-05-17",
+   "aliases": "LIC;LIC OF INDIA"
+  },
+  {
+   "security_id": "NSE-ZOMATO",
+   "canonical_symbol": "ETERNAL",
+   "listed_from": "2021-07-23",
+   "aliases": "ZOMATO;ETERNAL LTD;ZOMATO LTD",
+   "note": "Renamed from ZOMATO; same listing (Kite name \"ETERNAL - ZOMATO\", Yahoo history from 2021-07-23). Verified 2026-11-24."
+  },
+  {
+   "security_id": "NSE-JIOFIN",
+   "canonical_symbol": "JIOFIN",
+   "listed_from": "2023-08-21",
+   "aliases": "JIO FINANCIAL;JIOFINANCE;JFS"
+  },
+  {
+   "security_id": "NSE-NYKAA",
+   "canonical_symbol": "NYKAA",
+   "listed_from": "2021-11-10",
+   "aliases": "FSN E-COMMERCE"
+  },
+  {
+   "security_id": "NSE-HDFC-MERGED",
+   "canonical_symbol": "HDFC",
+   "listed_from": "1996-02-21",
+   "delisted_on": "2023-07-13",
+   "aliases": "HDFC LTD;HOUSING DEVELOPMENT FINANCE"
+  },
+  {
+   "security_id": "NSE-YESBANK",
+   "canonical_symbol": "YESBANK",
+   "listed_from": "2005-07-12",
+   "aliases": "YES BANK"
+  },
+  {
+   "security_id": "NSE-VEDL",
+   "canonical_symbol": "VEDL",
+   "listed_from": "2003-05-30",
+   "aliases": "VEDANTA;SESA STERLITE"
+  },
+  {
+   "security_id": "NSE-IOC",
+   "canonical_symbol": "IOC",
+   "listed_from": "1996-04-24",
+   "aliases": "INDIAN OIL"
+  },
+  {
+   "security_id": "NSE-GAIL",
+   "canonical_symbol": "GAIL",
+   "listed_from": "1997-04-02",
+   "aliases": "GAIL INDIA"
+  },
+  {
+   "security_id": "NSE-UPL",
+   "canonical_symbol": "UPL",
+   "listed_from": "2004-03-18",
+   "aliases": "UPL LTD"
+  },
+  {
+   "security_id": "NSE-BANKBARODA",
+   "canonical_symbol": "BANKBARODA",
+   "listed_from": "1997-02-19",
+   "aliases": "BANK OF BARODA;BOB"
+  },
+  {
+   "security_id": "NSE-PNB",
+   "canonical_symbol": "PNB",
+   "listed_from": "2002-04-25",
+   "aliases": "PUNJAB NATIONAL BANK"
+  },
+  {
+   "security_id": "NSE-DABUR",
+   "canonical_symbol": "DABUR",
+   "listed_from": "1999-04-01",
+   "aliases": "DABUR INDIA"
+  },
+  {
+   "security_id": "NSE-PIDILITIND",
+   "canonical_symbol": "PIDILITIND",
+   "listed_from": "1995-03-21",
+   "aliases": "PIDILITE;PIDILITE INDUSTRIES"
+  },
+  {
+   "security_id": "NSE-HAVELLS",
+   "canonical_symbol": "HAVELLS",
+   "listed_from": "2001-07-16",
+   "aliases": "HAVELLS INDIA"
+  },
+  {
+   "security_id": "NSE-SIEMENS",
+   "canonical_symbol": "SIEMENS",
+   "listed_from": "1995-05-16"
+  },
+  {
+   "security_id": "NSE-DLF",
+   "canonical_symbol": "DLF",
+   "listed_from": "2007-07-05"
+  },
+  {
+   "security_id": "NSE-TATAPOWER",
+   "canonical_symbol": "TATAPOWER",
+   "listed_from": "1995-11-08",
+   "aliases": "TATA POWER"
+  },
+  {
+   "security_id": "NSE-MOTHERSON",
+   "canonical_symbol": "MOTHERSON",
+   "listed_from": "1996-11-27",
+   "aliases": "SAMVARDHANA MOTHERSON"
+  },
+  {
+   "security_id": "NSE-TMCV",
+   "canonical_symbol": "TMCV",
+   "listed_from": "2025-11-12",
+   "aliases": "TATA MOTORS COMMERCIAL VEHICLES",
+   "note": "New listing of the demerged commercial-vehicles business; first session 2025-11-12 per Kite and Yahoo daily bars. Verified 2026-11-24."
+  }
+ ]
+}

@@ -295,3 +295,45 @@ class TestFundamentalsToDataFrame:
 
         df = fundamentals_to_dataframe([])
         assert df.empty
+
+
+class TestReportingCurrency:
+    """Statements are not always in INR (e.g. Infosys reports in USD on Yahoo)."""
+
+    def test_inr_amounts_scale_to_crore(self):
+        from app.data.fundamentals import _scale_statement_value
+
+        assert _scale_statement_value(2.5e12, "INR_crore", "INR") == (250000.0, "INR_crore")
+
+    def test_usd_amounts_keep_currency_and_scale_to_million(self):
+        from app.data.fundamentals import _scale_statement_value
+
+        assert _scale_statement_value(20_158_000_000, "INR_crore", "USD") == (20158.0, "USD_million")
+        assert _scale_statement_value(0.81, "INR", "USD") == (0.81, "USD")
+
+    def test_ratios_are_currency_independent(self):
+        from app.data.fundamentals import _scale_statement_value
+
+        assert _scale_statement_value(21.5, "percent", "USD") == (21.5, "percent")
+
+    def test_usd_statements_are_labelled_usd(self, monkeypatch):
+        import pandas as pd
+
+        from app.data import fundamentals
+
+        col = pd.Timestamp("2026-03-31")
+        income = pd.DataFrame({col: [20_158_000_000.0, 0.81]}, index=["Total Revenue", "Basic EPS"])
+        monkeypatch.setattr(
+            fundamentals,
+            "_fetch_yfinance_financials",
+            lambda symbol: {
+                "income": income,
+                "balance": pd.DataFrame(),
+                "cashflow": pd.DataFrame(),
+                "currency": "USD",
+            },
+        )
+        rows = {r.metric: r for r in fundamentals.compute_statement_fundamentals("INFY")}
+        assert rows["revenue"].unit == "USD_million" and rows["revenue"].value == 20158.0
+        assert rows["eps"].unit == "USD"
+        assert rows["revenue"].source.endswith("_USD")

@@ -35,6 +35,7 @@ from xml.etree import ElementTree
 
 import numpy as np
 import requests
+from app.data.nse import _yfinance_symbol
 
 logger = logging.getLogger("artha.data.news")
 
@@ -401,6 +402,9 @@ COMPANY_NAMES = {
     "WIPRO": "Wipro",
     "NESTLEIND": "Nestle India",
     "TATAMOTORS": "Tata Motors",
+    "TMPV": "Tata Motors Passenger Vehicles",
+    "TMCV": "Tata Motors",
+    "ETERNAL": "Eternal Zomato",
     "ADANIENT": "Adani Enterprises",
     "POWERGRID": "Power Grid",
     "NTPC": "NTPC Limited",
@@ -435,7 +439,11 @@ def _parse_rss(url: str, max_items: int = 20) -> list[dict]:
 
         for item in root.iter("item"):
             title = item.findtext("title", "")
-            link = item.findtext("link", "")
+            link = (item.findtext("link", "") or "").strip()
+            # Feed content is untrusted: only plain web links reach the UI
+            # (no javascript:, data:, or other schemes).
+            if not re.match(r"^https?://", link, re.IGNORECASE):
+                link = ""
             pub_date = item.findtext("pubDate", "")
             description = item.findtext("description", "")
             source = item.findtext("source", "")
@@ -500,7 +508,7 @@ def fetch_news(symbol: str, max_items: int = 25) -> list[dict]:
     all_items.extend(google_items)
 
     # Source 2: Yahoo Finance
-    yahoo_items = _parse_rss(YAHOO_FINANCE_RSS.format(ticker=f"{symbol}.NS"))
+    yahoo_items = _parse_rss(YAHOO_FINANCE_RSS.format(ticker=_yfinance_symbol(symbol)))
     for item in yahoo_items:
         item["source"] = item.get("source") or "Yahoo Finance"
     all_items.extend(yahoo_items)

@@ -141,8 +141,12 @@ def rank_sleeve_returns(
         short_symbols = (
             set() if config.long_only else set(ranked.index[-n_per_leg:])
         )
+        # The book chosen at this close is held through the close of the next
+        # decision date (inclusive).  Ending one session earlier left every
+        # rebalance day flat (return 0), silently dropping 1/rebalance_days of
+        # all sessions — 20% of days for a weekly sleeve.
         hold_end = min(
-            decision_position + config.rebalance_days, len(dates),
+            decision_position + config.rebalance_days + 1, len(dates),
         )
         denominator = max(len(long_symbols) + len(short_symbols), 1)
         turnover = (

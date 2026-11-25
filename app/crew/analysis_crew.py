@@ -305,11 +305,27 @@ class AnalysisCrew:
 
                 # Citation check
                 citation_result = check_citations(report_text, job_id, self.store)
+                llm_rejection = None
                 if not citation_result["valid"]:
                     logger.warning(
                         "Writer output failed citation gate; using Fact Store fallback: %s",
                         citation_result,
                     )
+                    # Keep a compact record of *why* the LLM text was rejected
+                    # so rejections are observable, not silent.
+                    llm_rejection = {
+                        "total_citations": citation_result["total_citations"],
+                        "unresolved": citation_result["unresolved"][:10],
+                        "uncited_lines": len(citation_result["uncited_numeric_claims"]),
+                        "unsupported_lines": len(citation_result["unsupported_numeric_claims"]),
+                        "examples": (
+                            [{"uncited": line[:240]} for line in citation_result["uncited_numeric_claims"][:3]]
+                            + [
+                                {"unsupported": item["numbers"][:5], "line": item["line"][:240]}
+                                for item in citation_result["unsupported_numeric_claims"][:5]
+                            ]
+                        ),
+                    }
                     report_text = _build_fallback_report(job_id, self.store, symbol)
                     citation_result = check_citations(report_text, job_id, self.store)
                     if not citation_result["valid"]:
@@ -326,6 +342,8 @@ class AnalysisCrew:
                     "report_length": len(report_text),
                     "citations": citation_result,
                 }
+                if llm_rejection:
+                    stages["writer"]["llm_rejection"] = llm_rejection
                 progress(
                     "stage3",
                     f"✓ Report: {len(report_text)} chars, "
@@ -453,10 +471,13 @@ def _run_fundamentals_narration(
     by_fy: dict[int, dict] = defaultdict(dict)
     fact_id_map: dict[str, str] = {}  # metric_fy -> fact_id (for citation)
     
+    unit_by_metric: dict[str, str] = {}
     for f in facts:
         key = f"{f.metric}_{f.fiscal_year}"
         by_fy[f.fiscal_year][f.metric] = f.value
         fact_id_map[key] = f.fact_id[:8]
+        if getattr(f, "unit", None):
+            unit_by_metric[f.metric] = f.unit
 
     # Key metrics to include (in order of importance)
     key_metrics = [
@@ -498,6 +519,13 @@ def _run_fundamentals_narration(
             else:
                 row_vals.append("—")
         if has_data:
+            # Statements are not always in INR (e.g. Infosys reports in USD);
+            # show the unit the fact actually carries.
+            unit = unit_by_metric.get(metric_key)
+            if unit and unit != "INR_crore" and "(₹Cr)" in label:
+                label = label.replace("(₹Cr)", f"({unit})")
+            elif unit and unit != "INR" and label.endswith("(₹)") and metric_key == "eps":
+                label = label.replace("(₹)", f"({unit})")
             ids_str = ", ".join(f"[{fid}…]" for fid in row_fact_ids if fid)
             table_lines.append(f"{label} | " + " | ".join(row_vals) + f" | {ids_str}")
             included_fact_ids.extend(row_fact_ids)
@@ -627,8 +655,12 @@ def _build_fallback_report(job_id: str, store: FactStore, symbol: str) -> str:
                     f"[fact_id: {n.fact_id}]"
                 )
                 if n.headlines_sample:
+                    # Headlines routinely contain figures ("profit rises 9%
+                    # to Rs 12,075 crore"); each line must carry its own
+                    # citation or the report fails the rule-10 gate.
                     for h in n.headlines_sample[:3]:
-                        lines.append(f"  - {h}")
+                        h = " ".join(str(h).split())
+                        lines.append(f"  - {h} [fact_id: {n.fact_id}]")
 
     # Risk flags
     risk_facts = store.get_facts_by_type(job_id, FactType.RISK_FLAG)

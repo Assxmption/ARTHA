@@ -4,6 +4,7 @@ import {
   Filter, Search, TrendingUp, TrendingDown, Plus, X, Play,
   RefreshCw, Loader2, ChevronDown, Bookmark, ArrowUpDown, Database,
 } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 
 const OPERATORS = [
   { value: 'gt', label: '>' },
@@ -52,10 +53,10 @@ export default function Screener() {
   // Load metadata on mount
   useEffect(() => {
     Promise.all([
-      fetch('/api/screener/metrics').then(r => r.ok ? r.json() : { metrics: [] }),
-      fetch('/api/screener/sectors').then(r => r.ok ? r.json() : { sectors: [] }),
-      fetch('/api/screener/presets').then(r => r.ok ? r.json() : { presets: {} }),
-      fetch('/api/screener/info').then(r => r.ok ? r.json() : null),
+      apiFetch('/api/screener/metrics').then(r => r.ok ? r.json() : { metrics: [] }),
+      apiFetch('/api/screener/sectors').then(r => r.ok ? r.json() : { sectors: [] }),
+      apiFetch('/api/screener/presets').then(r => r.ok ? r.json() : { presets: {} }),
+      apiFetch('/api/screener/info').then(r => r.ok ? r.json() : null),
     ]).then(([m, s, p, info]) => {
       setMetrics(m.metrics || []);
       setSectors(s.sectors || []);
@@ -118,7 +119,7 @@ export default function Screener() {
       }));
 
     try {
-      const res = await fetch('/api/screener/query', {
+      const res = await apiFetch('/api/screener/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -148,10 +149,10 @@ export default function Screener() {
   const buildCache = async () => {
     setBuilding(true);
     try {
-      await fetch('/api/screener/build', { method: 'POST' });
+      await apiFetch('/api/screener/build', { method: 'POST' });
       // Poll for completion
       const poll = setInterval(async () => {
-        const res = await fetch('/api/screener/info');
+        const res = await apiFetch('/api/screener/info');
         if (res.ok) {
           const info = await res.json();
           setCacheInfo(info);
@@ -219,7 +220,7 @@ export default function Screener() {
               Cache: {cacheInfo.cache_age_hours?.toFixed(1)}h old
             </span>
           )}
-          <button onClick={() => { fetch('/api/screener/refresh', { method: 'POST' }); }}
+          <button onClick={() => { apiFetch('/api/screener/refresh', { method: 'POST' }); }}
             className="p-2 text-outline hover:text-on-surface transition-colors" title="Refresh cache">
             <RefreshCw size={14} />
           </button>

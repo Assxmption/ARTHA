@@ -104,8 +104,16 @@ This runs all components end-to-end on synthetic data:
 
 ### Run Tests
 ```bash
-python -m pytest tests/ -v --tb=short
-# → 752 passed, 2 skipped
+python -m pytest tests/ -v --tb=short          # offline, deterministic (live tests skipped)
+```
+
+Live-market tests hit real NSE / Yahoo / RSS feeds (no fixtures) and check
+that bars are current to the latest NSE session, fall on real session dates,
+agree across providers, and carry provenance:
+
+```bash
+ARTHA_LIVE=1 python -m pytest tests/live -v                    # real market data
+ARTHA_LIVE=1 ARTHA_LIVE_LLM=1 python -m pytest tests/live -v   # + real LLM report
 ```
 
 ### Run the Backend

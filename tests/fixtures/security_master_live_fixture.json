@@ -1,0 +1,72 @@
+{
+ "schema_version": "nse_security_master_v1",
+ "description": "Fixture: 13 real NSE names (ZOMATO intentionally has no price data \u2014 renamed to ETERNAL)",
+ "last_updated": "2026-11-23",
+ "records": [
+  {
+   "security_id": "NSE-HDFCBANK",
+   "canonical_symbol": "HDFCBANK",
+   "listed_from": "2000-01-01"
+  },
+  {
+   "security_id": "NSE-ICICIBANK",
+   "canonical_symbol": "ICICIBANK",
+   "listed_from": "2000-01-01"
+  },
+  {
+   "security_id": "NSE-KOTAKBANK",
+   "canonical_symbol": "KOTAKBANK",
+   "listed_from": "2000-01-01"
+  },
+  {
+   "security_id": "NSE-AXISBANK",
+   "canonical_symbol": "AXISBANK",
+   "listed_from": "2000-01-01"
+  },
+  {
+   "security_id": "NSE-SBIN",
+   "canonical_symbol": "SBIN",
+   "listed_from": "2000-01-01"
+  },
+  {
+   "security_id": "NSE-PNB",
+   "canonical_symbol": "PNB",
+   "listed_from": "2000-01-01"
+  },
+  {
+   "security_id": "NSE-TCS",
+   "canonical_symbol": "TCS",
+   "listed_from": "2000-01-01"
+  },
+  {
+   "security_id": "NSE-INFY",
+   "canonical_symbol": "INFY",
+   "listed_from": "2000-01-01"
+  },
+  {
+   "security_id": "NSE-WIPRO",
+   "canonical_symbol": "WIPRO",
+   "listed_from": "2000-01-01"
+  },
+  {
+   "security_id": "NSE-HCLTECH",
+   "canonical_symbol": "HCLTECH",
+   "listed_from": "2000-01-01"
+  },
+  {
+   "security_id": "NSE-ONGC",
+   "canonical_symbol": "ONGC",
+   "listed_from": "2000-01-01"
+  },
+  {
+   "security_id": "NSE-TATASTEEL",
+   "canonical_symbol": "TATASTEEL",
+   "listed_from": "2000-01-01"
+  },
+  {
+   "security_id": "NSE-ZOMATO",
+   "canonical_symbol": "ZOMATO",
+   "listed_from": "2000-01-01"
+  }
+ ]
+}

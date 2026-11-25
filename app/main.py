@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -29,6 +29,17 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
 logger = logging.getLogger("artha")
+# httpx/httpcore log every request URL at INFO; some upstream calls carry
+# tokens in the query string, so those URLs must never reach host logs.
+for _noisy in ("httpx", "httpcore", "urllib3", "yfinance", "LiteLLM", "litellm"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
+
+# Refuse to run a production deployment with authentication switched off.
+from app.security.auth import check_production_config
+
+_config_problems = check_production_config()
+if _config_problems:
+    raise RuntimeError("Unsafe production configuration: " + "; ".join(_config_problems))
 
 # ── Ensure data directories exist ─────────────────────────────────────────────
 for d in ["data/PDFs", "data/Reports", "data/Outputs", "data_cache"]:
@@ -48,7 +59,20 @@ async def lifespan(app: FastAPI):
     logger.info("  [SEC] Security middleware active (headers, rate-limit, CORS)")
     logger.info("  [API] http://%s:%s", os.getenv("APP_HOST", "0.0.0.0"), os.getenv("APP_PORT", "8000"))
     logger.info("=" * 60)
+
+    # Paper books: keeps the quant engine trading *virtually* (no broker orders).
+    paper_enabled = (
+        os.getenv("PAPER_TRADING_ENABLED", "true").lower() == "true"
+        and "PYTEST_CURRENT_TEST" not in os.environ
+    )
+    if paper_enabled:
+        from app.quant.paper_book import paper_scheduler
+
+        paper_scheduler.start()
+        logger.info("  [PAPER] Paper-trading scheduler: %s (simulated orders only)", paper_scheduler.state)
     yield
+    if paper_enabled:
+        paper_scheduler.stop()
     logger.info("Shutting down ARTHA...")
 
 
@@ -64,6 +88,7 @@ app = FastAPI(
     version="2.0.0",
     docs_url="/docs" if os.getenv("APP_ENV", "development") == "development" else None,
     redoc_url="/redoc" if os.getenv("APP_ENV", "development") == "development" else None,
+    openapi_url="/openapi.json" if os.getenv("APP_ENV", "development") == "development" else None,
     lifespan=lifespan,
 )
 
@@ -79,12 +104,18 @@ from app.api.simulator_routes import router as simulator_router
 from app.api.company_routes import router as company_router
 from app.api.paper_trade_routes import router as paper_trade_router
 from app.api.screener_routes import router as screener_router
+from app.api.kite_routes import router as kite_router
+from app.api.system_routes import router as system_router
+from app.api.paper_routes import router as paper_router
 app.include_router(quant_router)
 app.include_router(analysis_router)
 app.include_router(simulator_router)
 app.include_router(company_router)
 app.include_router(paper_trade_router)
 app.include_router(screener_router)
+app.include_router(kite_router)
+app.include_router(system_router)
+app.include_router(paper_router)
 
 
 @app.get("/api/health", tags=["System"])
@@ -120,17 +151,23 @@ if frontend_dir.exists():
         """Serve the frontend SPA."""
         return FileResponse(frontend_dir / "index.html")
 
+    _dist_root = frontend_dir.resolve()
+
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
-        """Catch-all for SPA routing."""
+        """Catch-all for SPA routing: real files inside frontend/dist, else index.html."""
         if full_path.startswith("api/"):
-            logger.warning(f"API request fell through to SPA catch-all! Path: {full_path}")
-            
-        index = frontend_dir / "index.html"
-        requested = frontend_dir / full_path
-        if requested.exists() and requested.is_file():
+            # Unknown API route: a JSON 404, never the SPA shell.
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+        # The path is percent-decoded by Starlette ("..%2F" → "../"), so it must be
+        # resolved and contained: anything outside frontend/dist falls back to index.html.
+        try:
+            requested = (_dist_root / full_path).resolve()
+        except (OSError, ValueError):
+            requested = None
+        if requested is not None and requested.is_relative_to(_dist_root) and requested.is_file():
             return FileResponse(str(requested))
-        return FileResponse(str(index))
+        return FileResponse(str(_dist_root / "index.html"))
 
 @app.middleware("http")
 async def add_cache_control_header(request: Request, call_next):

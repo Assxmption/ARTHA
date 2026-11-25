@@ -1,0 +1,44 @@
+# Render Blueprint (free plan). Secrets marked `sync: false` are entered in the
+# Render dashboard, never committed. See docs/DEPLOYMENT.md for the caveats of
+# the free plan (512 MB RAM, sleeps after 15 min idle, ephemeral disk).
+services:
+  - type: web
+    name: artha
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: AUTH_REQUIRED
+        value: "true"
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
+      - key: LLM_OWNER_KEYS
+        value: demo           # showcase; set to "off" when going fully public
+      - key: DEMO_JOBS_PER_VISITOR
+        value: "2"
+      - key: DEMO_JOBS_PER_DAY
+        value: "15"
+      - key: PAPER_TRADING_ENABLED
+        value: "true"
+      - key: ALLOWED_ORIGINS
+        sync: false           # https://<your-service>.onrender.com
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false           # remove to go BYOK-only
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: KITE_API_KEY
+        sync: false
+      - key: KITE_API_SECRET
+        sync: false
+      - key: KITE_REDIRECT_URL
+        sync: false           # https://<your-service>.onrender.com/api/kite/callback
+      - key: DATABASE_URL
+        sync: false           # optional Supabase Postgres for the fact store

@@ -29,6 +29,7 @@ import pandas as pd
 
 from app.data.nse import fetch_nse_ohlcv, normalize_nse_symbol
 from app.factstore.schemas import FundamentalRow
+from app.data.nse import _yfinance_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -82,11 +83,12 @@ def _fetch_yfinance_financials(symbol: str) -> dict:
     try:
         import yfinance as yf
 
-        ticker = yf.Ticker(f"{symbol}.NS")
+        ticker = yf.Ticker(_yfinance_symbol(symbol))
         result = {
             "income": pd.DataFrame(),
             "balance": pd.DataFrame(),
             "cashflow": pd.DataFrame(),
+            "currency": _reporting_currency(ticker, symbol),
         }
 
         try:
@@ -164,6 +166,43 @@ def _date_to_indian_fy(dt: pd.Timestamp) -> int:
     return year
 
 
+def _reporting_currency(ticker, symbol: str) -> str:
+    """
+    Currency the company's *financial statements* are reported in.
+
+    This is not always INR for NSE listings: e.g. Infosys files its
+    statements in USD on Yahoo (financialCurrency='USD') while its share
+    price is in INR.  Labelling those figures INR_crore misstates them ~85x.
+    """
+    try:
+        currency = (ticker.info or {}).get("financialCurrency")
+    except Exception as e:  # network/rate-limit: fall back, but say so
+        logger.warning("Could not read reporting currency for %s: %s", symbol, e)
+        currency = None
+    if not currency:
+        logger.warning("Reporting currency unknown for %s; assuming INR", symbol)
+        return "INR"
+    return str(currency).upper()
+
+
+def _scale_statement_value(value: float, unit: str, currency: str) -> tuple[float, str]:
+    """
+    Convert a raw statement value to its display unit without changing
+    currency (no FX conversion is invented here).
+
+    INR amounts → crore (1e7); other currencies → million (1e6), labelled
+    with the real currency, e.g. ``USD_million``.  Per-share values keep
+    their currency label.
+    """
+    if unit == "INR_crore":
+        if currency == "INR":
+            return value / 1e7, "INR_crore"
+        return value / 1e6, f"{currency}_million"
+    if unit == "INR" and currency != "INR":
+        return value, currency
+    return value, unit
+
+
 def compute_statement_fundamentals(
     symbol: str,
 ) -> list[FundamentalRow]:
@@ -178,6 +217,9 @@ def compute_statement_fundamentals(
     """
     symbol = normalize_nse_symbol(symbol)
     financials = _fetch_yfinance_financials(symbol)
+    currency = financials.get("currency", "INR")
+    # Non-INR statements are tagged in the provenance string as well as the unit.
+    ccy_tag = "" if currency == "INR" else f"_{currency}"
     rows: list[FundamentalRow] = []
 
     job_id_placeholder = "pending"  # Set by the agent before writing to store
@@ -187,14 +229,14 @@ def compute_statement_fundamentals(
     if not income.empty:
         for col_date in income.columns:
             fy = _date_to_indian_fy(pd.Timestamp(col_date))
-            source = f"YFINANCE_INCOME_STMT_{symbol}_FY{fy}"
+            source = f"YFINANCE_INCOME_STMT_{symbol}_FY{fy}{ccy_tag}"
 
             for yf_name, (metric, unit) in _INCOME_METRICS.items():
                 value = _extract_metric_from_statement(income, yf_name, col_date)
                 if value is not None:
                     # Convert from raw (typically in local currency) to crore
                     # yfinance reports in the stock's currency (INR for .NS)
-                    display_value = value / 1e7 if unit == "INR_crore" else value
+                    display_value, unit = _scale_statement_value(value, unit, currency)
                     rows.append(FundamentalRow(
                         job_id=job_id_placeholder,
                         symbol=symbol,
@@ -239,12 +281,12 @@ def compute_statement_fundamentals(
     if not balance.empty:
         for col_date in balance.columns:
             fy = _date_to_indian_fy(pd.Timestamp(col_date))
-            source = f"YFINANCE_BALANCE_SHEET_{symbol}_FY{fy}"
+            source = f"YFINANCE_BALANCE_SHEET_{symbol}_FY{fy}{ccy_tag}"
 
             for yf_name, (metric, unit) in _BALANCE_METRICS.items():
                 value = _extract_metric_from_statement(balance, yf_name, col_date)
                 if value is not None:
-                    display_value = value / 1e7 if unit == "INR_crore" else value
+                    display_value, unit = _scale_statement_value(value, unit, currency)
                     rows.append(FundamentalRow(
                         job_id=job_id_placeholder,
                         symbol=symbol,
@@ -313,12 +355,12 @@ def compute_statement_fundamentals(
     if not cashflow.empty:
         for col_date in cashflow.columns:
             fy = _date_to_indian_fy(pd.Timestamp(col_date))
-            source = f"YFINANCE_CASHFLOW_{symbol}_FY{fy}"
+            source = f"YFINANCE_CASHFLOW_{symbol}_FY{fy}{ccy_tag}"
 
             for yf_name, (metric, unit) in _CASHFLOW_METRICS.items():
                 value = _extract_metric_from_statement(cashflow, yf_name, col_date)
                 if value is not None:
-                    display_value = value / 1e7 if unit == "INR_crore" else value
+                    display_value, unit = _scale_statement_value(value, unit, currency)
                     rows.append(FundamentalRow(
                         job_id=job_id_placeholder,
                         symbol=symbol,

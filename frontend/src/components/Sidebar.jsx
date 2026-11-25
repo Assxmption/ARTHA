@@ -1,19 +1,25 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, Eye, Activity, FileText, Newspaper, BarChart2, Database, Zap, Filter } from 'lucide-react';
+import { Home, Eye, Activity, FileText, Newspaper, BarChart2, Database, Zap, Filter, CandlestickChart, Settings } from 'lucide-react';
+import { useActiveSymbol } from '../lib/activeSymbol';
 
 export default function Sidebar({ mobileOpen, setMobileOpen, desktopOpen }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const activeSymbol = useActiveSymbol();
 
   const navItems = [
     { label: 'Overview', path: '/home', icon: <Home size={16} /> },
     { label: 'Watchlist', path: '/watchlist', icon: <Eye size={16} /> },
     { label: 'Screener', path: '/screener', icon: <Filter size={16} /> },
     { label: 'Quant Signals', path: '/signals', icon: <Activity size={16} /> },
-    { label: 'Fundamentals', path: '/fundamentals/RELIANCE', icon: <FileText size={16} /> },
-    { label: 'Sentiment', path: '/news/RELIANCE', icon: <Newspaper size={16} /> },
+    // Symbol tabs show the instrument on its own line under the label, so a
+    // long ticker (BAJAJFINSV, ULTRACEMCO…) never squeezes or wraps the label.
+    { label: 'Chart', badge: activeSymbol, path: `/dashboard/${activeSymbol}`, icon: <CandlestickChart size={16} /> },
+    { label: 'Fundamentals', badge: activeSymbol, path: `/fundamentals/${activeSymbol}`, icon: <FileText size={16} /> },
+    { label: 'Sentiment', badge: activeSymbol, path: `/news/${activeSymbol}`, icon: <Newspaper size={16} /> },
     { label: 'Backtest Lab', path: '/simulator', icon: <BarChart2 size={16} /> },
     { label: 'Paper Trading', path: '/paper-trading', icon: <Zap size={16} /> },
+    { label: 'Settings', path: '/settings', icon: <Settings size={16} /> },
   ];
 
   const isActive = (itemPath) => {
@@ -51,22 +57,29 @@ export default function Sidebar({ mobileOpen, setMobileOpen, desktopOpen }) {
             </h1>
           </div>
           
-          <nav className="px-4 flex-1">
+          <nav className="px-4 flex-1 min-h-0 overflow-y-auto">
             <ul className="space-y-1">
               {navItems.map((item) => (
-                <li key={item.label}>
+                <li key={item.path}>
                   <button 
                     onClick={() => { navigate(item.path); setMobileOpen(false); }}
                     className={`
-                      w-full flex items-center gap-3 px-4 py-3 text-sm font-ui uppercase tracking-widest transition-colors rounded-sm
+                      w-full flex items-center gap-3 px-4 py-3 text-sm font-ui uppercase tracking-widest transition-colors rounded-sm text-left
                       ${isActive(item.path)
                         ? 'bg-primary/10 text-primary border-l-2 border-primary' 
                         : 'text-outline hover:bg-surface hover:text-on-surface border-l-2 border-transparent'
                       }
                     `}
                   >
-                    {item.icon}
-                    {item.label}
+                    <span className="shrink-0">{item.icon}</span>
+                    <span className="min-w-0 flex flex-col leading-tight">
+                      <span className="truncate whitespace-nowrap">{item.label}</span>
+                      {item.badge && (
+                        <span title={item.badge} className="truncate font-mono text-[10px] tracking-normal text-on-surface-variant/80 mt-0.5">
+                          {item.badge}
+                        </span>
+                      )}
+                    </span>
                   </button>
                 </li>
               ))}

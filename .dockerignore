@@ -1,0 +1,41 @@
+# Secrets — never send to the Docker build context
+.env
+.env.*
+!.env.example
+
+# Local environments / caches
+.venv/
+venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.DS_Store
+.git/
+.github/
+.agents/
+
+# Frontend build artefacts (rebuilt in the image)
+frontend/node_modules/
+frontend/dist/
+
+# Runtime data and caches (mounted as volumes at runtime)
+data/
+data_cache/*
+!data_cache/nse/
+data_cache/nse/*
+!data_cache/nse/security_master.json
+!data_cache/mcx/
+data_cache/mcx/*
+!data_cache/mcx/contracts.json
+
+# Not needed in the image
+docs/obsidian/
+scripts/
+tests/
+site_brief/
+
+# Nested env files and local tooling
+**/.env
+**/.env.*
+!**/.env.example
+.claude/

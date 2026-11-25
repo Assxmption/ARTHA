@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../lib/api';
 
 export default function OptionsChain({ symbol }) {
   const [data, setData] = useState(null);
@@ -7,7 +8,7 @@ export default function OptionsChain({ symbol }) {
   useEffect(() => {
     const fetchOptions = async () => {
       try {
-        const res = await fetch(`/api/quant/options/${symbol}`);
+        const res = await apiFetch(`/api/quant/options/${symbol}`);
         const json = await res.json();
         setData(json);
       } catch (e) {
@@ -38,24 +39,29 @@ export default function OptionsChain({ symbol }) {
       <div className="border-b border-outline-variant p-3 bg-surface-container-low flex justify-between items-center">
         <div>
           <span className="font-ui text-[10px] uppercase tracking-widest text-on-surface block">Options Chain</span>
-          <span className="font-mono text-xs text-primary">Expiry: {data.expiry} | Spot: {data.spotPrice}</span>
+          <span className="font-mono text-xs text-primary">Expiry: {data.expiry} | Spot: {data.spotPrice} | PCR: {data.pcr ?? '—'}</span>
         </div>
+        <span className="font-mono text-[10px] text-outline" title={data.iv_method || ''}>
+          {data.source === 'kite' ? 'KITE · LIVE' : data.source}{data.as_of ? ` · ${data.as_of.slice(11, 16)}` : ''}
+        </span>
       </div>
       
       <div className="overflow-x-auto">
         <table className="w-full text-center font-mono text-xs">
           <thead>
             <tr className="border-b border-outline-variant bg-surface-container-lowest">
-              <th colSpan="3" className="p-2 border-r border-outline-variant text-secondary">CALLS</th>
+              <th colSpan="4" className="p-2 border-r border-outline-variant text-secondary">CALLS</th>
               <th className="p-2 border-r border-outline-variant bg-surface-variant font-ui text-[10px] tracking-widest uppercase">Strike</th>
-              <th colSpan="3" className="p-2 text-error">PUTS</th>
+              <th colSpan="4" className="p-2 text-error">PUTS</th>
             </tr>
             <tr className="border-b border-outline-variant bg-surface-container text-[10px] text-outline uppercase font-ui tracking-widest">
               <th className="p-2 border-r border-outline-variant/30 font-normal">OI</th>
               <th className="p-2 border-r border-outline-variant/30 font-normal">Vol</th>
+              <th className="p-2 border-r border-outline-variant/30 font-normal">IV</th>
               <th className="p-2 border-r border-outline-variant font-normal">LTP</th>
               <th className="p-2 border-r border-outline-variant bg-surface-variant font-normal">Price</th>
               <th className="p-2 border-r border-outline-variant/30 font-normal">LTP</th>
+              <th className="p-2 border-r border-outline-variant/30 font-normal">IV</th>
               <th className="p-2 border-r border-outline-variant/30 font-normal">Vol</th>
               <th className="p-2 font-normal">OI</th>
             </tr>
@@ -70,6 +76,7 @@ export default function OptionsChain({ symbol }) {
                 <tr key={call.strike} className="border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors">
                   <td className={`p-2 border-r border-outline-variant/30 ${isCallITM ? 'bg-primary/5 text-primary' : 'text-on-surface-variant'}`}>{call.openInterest.toLocaleString()}</td>
                   <td className={`p-2 border-r border-outline-variant/30 ${isCallITM ? 'bg-primary/5 text-on-surface' : 'text-on-surface'}`}>{call.volume.toLocaleString()}</td>
+                  <td className={`p-2 border-r border-outline-variant/30 ${isCallITM ? 'bg-primary/5' : ''} text-on-surface-variant`}>{iv(call.impliedVolatility)}</td>
                   <td className={`p-2 border-r border-outline-variant font-bold ${isCallITM ? 'bg-primary/5 text-secondary' : 'text-secondary'}`}>{call.lastPrice.toFixed(2)}</td>
                   
                   <td className="p-2 border-r border-outline-variant bg-surface-variant font-bold text-on-surface">
@@ -77,6 +84,7 @@ export default function OptionsChain({ symbol }) {
                   </td>
                   
                   <td className={`p-2 border-r border-outline-variant/30 font-bold ${isPutITM ? 'bg-error/5 text-error' : 'text-error'}`}>{put.lastPrice.toFixed(2)}</td>
+                  <td className={`p-2 border-r border-outline-variant/30 ${isPutITM ? 'bg-error/5' : ''} text-on-surface-variant`}>{iv(put.impliedVolatility)}</td>
                   <td className={`p-2 border-r border-outline-variant/30 ${isPutITM ? 'bg-error/5 text-on-surface' : 'text-on-surface'}`}>{put.volume.toLocaleString()}</td>
                   <td className={`p-2 ${isPutITM ? 'bg-error/5 text-error' : 'text-on-surface-variant'}`}>{put.openInterest.toLocaleString()}</td>
                 </tr>
@@ -87,4 +95,8 @@ export default function OptionsChain({ symbol }) {
       </div>
     </div>
   );
+}
+
+function iv(v) {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? `${v.toFixed(1)}%` : '—';
 }

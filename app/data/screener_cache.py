@@ -19,6 +19,7 @@ AGENTS.md Rule 11: Screener results are informational, not investment advice.
 from __future__ import annotations
 
 import logging
+import threading
 import sqlite3
 import time as time_mod
 from dataclasses import dataclass, field, asdict
@@ -27,6 +28,7 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+from app.data.nse import _yfinance_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +56,7 @@ NIFTY_200_SYMBOLS = [
     "ABB", "SIEMENS", "CUMMINSIND", "BEL", "HAL",
     "BHEL", "IRCTC", "CONCOR", "PIIND", "ATUL",
     "SOLARINDS", "COFORGE", "MPHASIS", "PERSISTENT", "LTTS",
-    "ZOMATO", "NYKAA", "PAYTM", "POLICYBZR", "DELHIVERY",
+    "ETERNAL", "NYKAA", "PAYTM", "POLICYBZR", "DELHIVERY",
     "TRENT", "PAGEIND", "RELAXO", "ABFRL", "RAYMOND",
     "VEDL", "NMDC", "NATIONALUM", "HINDZINC", "JINDALSTEL",
     # More mid-caps for broader coverage
@@ -92,6 +94,9 @@ class MetricInfo:
     unit: str                # "ratio", "percent", "inr", "inr_crore", "text"
     transform: str = "none"  # "none", "pct_to_100", "to_crore"
     is_filterable: bool = True
+    # True if Yahoo reports this field in the company's *statement* currency
+    # (info["financialCurrency"]), which is not always INR for NSE listings.
+    statement_currency: bool = False
 
 
 # The full catalog — adding a new metric is just one line here.
@@ -110,7 +115,8 @@ METRIC_CATALOG: list[MetricInfo] = [
     MetricInfo("revenue_growth",   "Rev. Growth",      "revenueGrowth",    "percent",    "pct_to_100"),
     MetricInfo("profit_margin",    "Profit Margin",    "profitMargins",    "percent",    "pct_to_100"),
     MetricInfo("operating_margin", "OPM",              "operatingMargins", "percent",    "pct_to_100"),
-    MetricInfo("free_cashflow",    "Free Cash Flow",   "freeCashflow",     "inr_crore",  "to_crore"),
+    MetricInfo("free_cashflow",    "Free Cash Flow",   "freeCashflow",     "inr_crore",  "to_crore",
+               statement_currency=True),
     MetricInfo("beta",             "Beta",             "beta",             "ratio"),
     MetricInfo("sector",           "Sector",           "sector",           "text",       is_filterable=False),
     MetricInfo("industry",         "Industry",         "industry",         "text",       is_filterable=False),
@@ -224,7 +230,7 @@ def _fetch_single_info(symbol: str, max_retries: int = 3) -> dict:
     for attempt in range(max_retries):
         try:
             import yfinance as yf
-            ticker = yf.Ticker(f"{symbol}.NS")
+            ticker = yf.Ticker(_yfinance_symbol(symbol))
             info = ticker.info or {}
 
             # yfinance returns an empty dict or a dict with only 'trailingPegRatio'
@@ -256,19 +262,63 @@ def _fetch_single_info(symbol: str, max_retries: int = 3) -> dict:
     return {}
 
 
+_FX_CACHE: dict[str, Optional[float]] = {}
+_FX_LOCK = threading.Lock()
+
+
+def _fx_to_inr(currency: str) -> Optional[float]:
+    """
+    Latest {currency}/INR close from Yahoo (e.g. USDINR=X), cached per process.
+
+    Used only to put statement-currency fields (e.g. Infosys's USD free cash
+    flow) on the same INR scale as the rest of the screener.  Returns None if
+    no live rate is available — the field is then left empty, never guessed.
+    """
+    currency = currency.upper()
+    if currency == "INR":
+        return 1.0
+    with _FX_LOCK:
+        if currency in _FX_CACHE:
+            return _FX_CACHE[currency]
+    rate: Optional[float] = None
+    try:
+        import yfinance as yf
+
+        hist = yf.Ticker(f"{currency}INR=X").history(period="5d")
+        if not hist.empty:
+            value = float(hist["Close"].dropna().iloc[-1])
+            rate = value if np.isfinite(value) and value > 0 else None
+    except Exception as e:
+        logger.warning("FX rate %sINR unavailable: %s", currency, e)
+    with _FX_LOCK:
+        _FX_CACHE[currency] = rate
+    return rate
+
+
 def _fetch_and_transform(symbol: str, now_iso: str) -> dict | None:
     """Fetch + transform a single symbol. Returns a row dict or None."""
     info = _fetch_single_info(symbol)
     if not info or info.get("regularMarketPrice") is None:
         return None
 
+    statement_ccy = str(info.get("financialCurrency") or "INR").upper()
     row = {"symbol": symbol, "cached_at": now_iso}
     for m in METRIC_CATALOG:
         raw = info.get(m.yfinance_field)
         if m.unit == "text":
             row[m.key] = str(raw) if raw else ""
-        else:
-            row[m.key] = _transform_value(raw, m)
+            continue
+        if m.statement_currency and statement_ccy != "INR" and raw is not None:
+            fx = _fx_to_inr(statement_ccy)
+            if fx is None:
+                logger.warning(
+                    "%s reports %s in %s and no live FX rate is available; leaving it empty",
+                    symbol, m.key, statement_ccy,
+                )
+                row[m.key] = None
+                continue
+            raw = float(raw) * fx
+        row[m.key] = _transform_value(raw, m)
     return row
 
 

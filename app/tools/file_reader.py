@@ -65,24 +65,24 @@ class FileReaderTool(BaseTool):
         else:
             return f"Unsupported file type: {suffix}. Supported: PDF, TXT, MD, RST, CSV"
 
+    @staticmethod
+    def _allowed_roots() -> list[Path]:
+        """Only user documents (data/) and the system temp dir — never .env, data_cache or source."""
+        import tempfile
+
+        return [Path("data").resolve(), Path(tempfile.gettempdir()).resolve()]
+
     def _resolve_path(self, file_path: str) -> Path | None:
-        """Try to resolve the file path."""
-        # Try as-is
-        p = Path(file_path)
-        if p.exists():
-            return p
-
-        # Try relative to data/PDFs/
-        base_dirs = [
-            Path("data/PDFs"),
-            Path("data"),
-            Path("."),
-        ]
-        for base in base_dirs:
-            candidate = base / file_path
-            if candidate.exists():
-                return candidate
-
+        """Resolve a path inside the allowed roots (None if missing or outside them)."""
+        candidates = [Path(file_path), Path("data/PDFs") / file_path, Path("data") / file_path]
+        roots = self._allowed_roots()
+        for c in candidates:
+            try:
+                r = c.resolve()
+            except (OSError, ValueError):
+                continue
+            if r.is_file() and any(r.is_relative_to(root) for root in roots):
+                return r
         return None
 
     def _read_pdf(self, path: Path, max_chars: int) -> str:

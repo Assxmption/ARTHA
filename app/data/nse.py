@@ -27,6 +27,7 @@ import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -67,9 +68,21 @@ def normalize_nse_symbol(symbol: str) -> str:
     return _ALIASES.get(s, s)
 
 
+_YAHOO_INDEX_SYMBOLS = {
+    "NIFTY": "^NSEI", "NIFTY50": "^NSEI", "NIFTY 50": "^NSEI", "^NSEI": "^NSEI",
+    "BANKNIFTY": "^NSEBANK", "NIFTY BANK": "^NSEBANK", "^NSEBANK": "^NSEBANK",
+    "INDIAVIX": "^INDIAVIX", "INDIA VIX": "^INDIAVIX", "^INDIAVIX": "^INDIAVIX",
+}
+
+
 def _yfinance_symbol(nse_symbol: str) -> str:
-    """Convert an NSE symbol to yfinance format."""
-    return f"{nse_symbol}.NS"
+    """Convert an NSE symbol (or index alias) to yfinance format."""
+    from app.data.symbols import resolve_symbol
+
+    s = nse_symbol.strip().upper()
+    if s in _YAHOO_INDEX_SYMBOLS:
+        return _YAHOO_INDEX_SYMBOLS[s]
+    return f"{resolve_symbol(s)}.NS"  # former tickers map to the current listing
 
 
 # ── MAD-based outlier detection ─────────────────────────────────────────────────
@@ -105,6 +118,59 @@ def flag_outliers_mad(
     return robust_z > threshold
 
 
+# ── Session-date handling ───────────────────────────────────────────────────────
+
+_IST = ZoneInfo("Asia/Kolkata")
+# NSE equity cash session closes at 15:30 IST; a bar for "today" fetched
+# before then is still forming and must not be cached as final.
+_SESSION_CLOSE_IST = (15, 30)
+# Cache files written before session dates were normalised (no `source`
+# column) mixed shifted jugaad timestamps with yfinance rows and are
+# discarded on read rather than trusted.
+_CACHE_REQUIRED_COLUMNS = {"date", "open", "high", "low", "close", "volume", "symbol", "source"}
+_OHLCV_COLUMNS = ["date", "open", "high", "low", "close", "volume", "symbol", "source", "provisional"]
+
+
+def _now_ist() -> datetime:
+    return datetime.now(_IST)
+
+
+def ist_today() -> date:
+    """Today's date on the NSE calendar (independent of the server timezone)."""
+    return _now_ist().date()
+
+
+def _session_closed(now: Optional[datetime] = None) -> bool:
+    now = now or _now_ist()
+    return (now.hour, now.minute) >= _SESSION_CLOSE_IST
+
+
+def normalize_session_dates(values: pd.Series) -> pd.Series:
+    """
+    Map provider timestamps to the NSE trading date (naive midnight).
+
+    jugaad-data returns each IST session date as a *naive UTC instant*:
+    the 2026-11-13 session arrives as ``2026-11-12 18:30:00``.  Taking
+    ``.date()`` of that labels every bar one day early (Friday bars land on
+    Thursday, Monday bars on Sunday).  Any naive timestamp that carries a
+    time-of-day is therefore read as UTC and converted to IST before the
+    date is taken.  Timezone-aware inputs (yfinance) are converted to IST.
+    """
+    ts = pd.to_datetime(values)
+    if getattr(ts.dt, "tz", None) is not None:
+        ts = ts.dt.tz_convert(_IST).dt.tz_localize(None)
+    else:
+        has_time = ts.notna() & (ts != ts.dt.normalize())
+        if has_time.any():
+            shifted = ts.dt.tz_localize("UTC").dt.tz_convert(_IST).dt.tz_localize(None)
+            ts = ts.where(~has_time, shifted)
+    return ts.dt.normalize().astype("datetime64[ns]")
+
+
+def _empty_ohlcv() -> pd.DataFrame:
+    return pd.DataFrame(columns=_OHLCV_COLUMNS)
+
+
 # ── Data fetching ───────────────────────────────────────────────────────────────
 
 def fetch_nse_ohlcv(
@@ -115,80 +181,149 @@ def fetch_nse_ohlcv(
     force_refresh: bool = False,
 ) -> pd.DataFrame:
     """
-    Fetch historical OHLCV data for an NSE equity.
+    Fetch daily OHLCV for an NSE equity, current up to the latest session.
 
     Returns a DataFrame with columns:
-        date, open, high, low, close, volume, symbol
+        date, open, high, low, close, volume, symbol, source, provisional
 
-    The data is cached as a Parquet file.  If cached data exists and
-    covers the requested range, it is returned directly.
+    * ``date`` is the NSE session date at naive midnight.
+    * Prices are as traded (unadjusted) from both providers so the two
+      sources agree bar-for-bar; corporate-action adjustment is a separate,
+      explicit step for return calculations.
+    * ``source`` records which provider produced each bar (rule 10).
+    * ``provisional`` is True for today's bar while the session is open.
 
-    Parameters
-    ----------
-    symbol : str
-        NSE symbol (e.g. 'HDFCBANK').
-    start_date : date
-        Start of the requested range (inclusive).
-    end_date : date, optional
-        End of the requested range (inclusive).  Defaults to today.
-    cache_dir : Path
-        Directory for Parquet cache files.
-    force_refresh : bool
-        If True, bypass cache and re-fetch.
-
-    Returns
-    -------
-    pd.DataFrame
-        OHLCV data, sorted by date ascending.
+    Cache policy: a cached range is served directly only if it fully covers
+    the request *and* the request ends before today; otherwise the tail is
+    re-fetched from the last cached session, so a bar cached mid-session is
+    replaced by its final values and new sessions are appended.
     """
     symbol = normalize_nse_symbol(symbol)
-    if end_date is None:
-        end_date = date.today()
+    today = ist_today()
+    if end_date is None or end_date > today:
+        end_date = today
+    if start_date > end_date:
+        return _empty_ohlcv()
 
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_file = cache_dir / f"{symbol}.parquet"
 
-    # ── Try cache ───────────────────────────────────────────────────────
-    if not force_refresh and cache_file.exists():
-        try:
-            cached = pd.read_parquet(cache_file)
-            if not cached.empty:
-                cached_start = pd.Timestamp(cached["date"].min()).date()
-                cached_end = pd.Timestamp(cached["date"].max()).date()
-                if cached_start <= start_date and cached_end >= end_date:
-                    mask = (
-                        (cached["date"] >= pd.Timestamp(start_date))
-                        & (cached["date"] <= pd.Timestamp(end_date))
-                    )
-                    logger.info(
-                        "Cache hit for %s [%s–%s]", symbol, start_date, end_date
-                    )
-                    return cached.loc[mask].reset_index(drop=True)
-        except Exception as e:
-            logger.warning("Cache read failed for %s: %s", symbol, e)
+    cached = None if force_refresh else _read_cache(cache_file, symbol)
+    fetch_start = start_date
+    if cached is not None and not cached.empty:
+        cached_start = cached["date"].min().date()
+        cached_end = cached["date"].max().date()
+        if cached_start <= start_date and cached_end >= end_date and end_date < today:
+            logger.info("Cache hit for %s [%s–%s]", symbol, start_date, end_date)
+            return _slice(cached, start_date, end_date)
+        if cached_start <= start_date:
+            fetch_start = max(start_date, cached_end)
 
-    # ── Fetch from jugaad-data (primary) ────────────────────────────────
-    df = _fetch_jugaad(symbol, start_date, end_date)
+    fresh = _fetch_range(symbol, fetch_start, end_date)
 
-    # ── Fallback to yfinance ────────────────────────────────────────────
-    if df is None or df.empty:
-        logger.info("jugaad-data returned empty for %s, trying yfinance", symbol)
-        df = _fetch_yfinance(symbol, start_date, end_date)
-
-    if df is None or df.empty:
+    if fresh.empty:
+        if cached is not None and not cached.empty:
+            logger.warning(
+                "No fresh data for %s [%s–%s]; serving cached bars only",
+                symbol, fetch_start, end_date,
+            )
+            return _slice(cached, start_date, end_date)
         logger.warning("No data fetched for %s [%s–%s]", symbol, start_date, end_date)
-        return pd.DataFrame(
-            columns=["date", "open", "high", "low", "close", "volume", "symbol"]
+        return _empty_ohlcv()
+
+    fresh["symbol"] = symbol
+    _flag_ingestion_outliers(fresh, symbol)
+
+    frames = [f for f in (cached, fresh) if f is not None and not f.empty]
+    merged = (
+        pd.concat(frames, ignore_index=True)
+        # Fresh rows win: they replace provisional bars and repaired dates.
+        .drop_duplicates(subset=["date"], keep="last")
+        .sort_values("date")
+        .reset_index(drop=True)
+    )
+    if "provisional" not in merged.columns:
+        merged["provisional"] = False
+    merged["provisional"] = merged["provisional"].fillna(False).astype(bool)
+
+    try:
+        merged.to_parquet(cache_file, index=False)
+        logger.info("Cached %d rows for %s", len(merged), symbol)
+    except Exception as e:
+        logger.warning("Cache write failed for %s: %s", symbol, e)
+
+    return _slice(merged, start_date, end_date)
+
+
+def _slice(df: pd.DataFrame, start_date: date, end_date: date) -> pd.DataFrame:
+    mask = (df["date"] >= pd.Timestamp(start_date)) & (df["date"] <= pd.Timestamp(end_date))
+    return df.loc[mask].reset_index(drop=True)
+
+
+def _read_cache(cache_file: Path, symbol: str) -> Optional[pd.DataFrame]:
+    if not cache_file.exists():
+        return None
+    try:
+        cached = pd.read_parquet(cache_file)
+    except Exception as e:
+        logger.warning("Cache read failed for %s: %s", symbol, e)
+        return None
+    if not _CACHE_REQUIRED_COLUMNS.issubset(cached.columns):
+        logger.warning(
+            "Discarding legacy cache for %s (no provenance column; dates may be "
+            "shifted by one session) — re-fetching", symbol,
         )
+        return None
+    cached = cached.copy()
+    cached["date"] = normalize_session_dates(cached["date"])
+    if "provisional" not in cached.columns:
+        cached["provisional"] = False
+    return cached.drop_duplicates(subset=["date"], keep="last").sort_values("date").reset_index(drop=True)
 
-    # ── Normalize columns ───────────────────────────────────────────────
-    df["symbol"] = symbol
-    df = df.sort_values("date").reset_index(drop=True)
 
-    # ── Flag outliers at ingestion (rule 7a) ────────────────────────────
-    # Uses multi-signal detection: MAD z-score + volume cross-check +
-    # price-range consistency.  Classifies as BAD_DATA / CIRCUIT_HIT /
-    # GENUINE_MOVE.  Nothing is silently dropped (rule 7b).
+def _fetch_range(symbol: str, start_date: date, end_date: date) -> pd.DataFrame:
+    """
+    Kite Connect first when a session is active (exchange data, current to
+    the live session); otherwise jugaad-data (NSE archives) with yfinance
+    filling whatever jugaad lacks.
+
+    jugaad-data typically lags the live market by one or more sessions, so a
+    non-empty jugaad result is not proof of freshness: any sessions after its
+    last bar are requested from yfinance, which carries the current session.
+    """
+    kite_df = _fetch_kite(symbol, start_date, end_date)
+    if kite_df is not None and not kite_df.empty:
+        today = ist_today()
+        kite_df["provisional"] = (kite_df["date"].dt.date == today) & (not _session_closed())
+        return kite_df
+
+    parts = []
+    jug = _fetch_jugaad(symbol, start_date, end_date)
+    yf_start = start_date
+    if jug is not None and not jug.empty:
+        parts.append(jug)
+        yf_start = jug["date"].max().date() + timedelta(days=1)
+    if yf_start <= end_date:
+        yfd = _fetch_yfinance(symbol, yf_start, end_date)
+        if yfd is not None and not yfd.empty:
+            parts.append(yfd)
+    if not parts:
+        return _empty_ohlcv()
+
+    df = (
+        pd.concat(parts, ignore_index=True)
+        .drop_duplicates(subset=["date"], keep="first")  # exchange archive wins
+        .sort_values("date")
+        .reset_index(drop=True)
+    )
+    df = df.dropna(subset=["open", "high", "low", "close"])
+    today = ist_today()
+    df["provisional"] = (df["date"].dt.date == today) & (not _session_closed())
+    return df
+
+
+def _flag_ingestion_outliers(df: pd.DataFrame, symbol: str) -> None:
+    """Flag (never drop) suspicious bars at ingestion — AGENTS.md rule 7."""
     if len(df) >= 10:
         from app.quant.robust_outliers import flag_bad_data, detect_circuit_halts, OutlierType
         outlier_flags = flag_bad_data(df, symbol)
@@ -203,63 +338,60 @@ def fetch_nse_ohlcv(
                     [(str(f.date.date()), f.evidence) for f in bad[:3]],
                 )
             if circuit:
-                logger.info(
-                    "Circuit-limit halts detected for %s: %d days",
-                    symbol, len(circuit),
-                )
+                logger.info("Circuit-limit halts detected for %s: %d days", symbol, len(circuit))
             if genuine:
-                logger.info(
-                    "Genuine large moves for %s: %d (preserved as signal)",
-                    symbol, len(genuine),
-                )
+                logger.info("Genuine large moves for %s: %d (preserved as signal)", symbol, len(genuine))
 
-        # Also mark circuit-halt days in the DataFrame for downstream use
         circuit_days = detect_circuit_halts(df)
         if circuit_days.any():
             df["circuit_halt"] = circuit_days
-            logger.info(
-                "Marked %d circuit-halt days for %s",
-                circuit_days.sum(), symbol,
-            )
+            logger.info("Marked %d circuit-halt days for %s", circuit_days.sum(), symbol)
     elif len(df) >= 3:
-        # Fallback: use simple MAD for very short series
         returns = df["close"].pct_change().dropna()
-        flags = flag_outliers_mad(returns)
-        n_flagged = flags.sum()
+        n_flagged = flag_outliers_mad(returns).sum()
         if n_flagged > 0:
             logger.warning(
                 "MAD outlier detection flagged %d observations for %s "
-                "(NOT dropped — review manually)",
-                n_flagged, symbol,
+                "(NOT dropped — review manually)", n_flagged, symbol,
             )
-
-    # ── Cache ───────────────────────────────────────────────────────────
-    try:
-        # Merge with existing cache to extend coverage
-        if cache_file.exists():
-            existing = pd.read_parquet(cache_file)
-            df = pd.concat([existing, df]).drop_duplicates(
-                subset=["date", "symbol"]
-            ).sort_values("date").reset_index(drop=True)
-        df.to_parquet(cache_file, index=False)
-        logger.info("Cached %d rows for %s", len(df), symbol)
-    except Exception as e:
-        logger.warning("Cache write failed for %s: %s", symbol, e)
-
-    # Return only the requested range
-    mask = (
-        (df["date"] >= pd.Timestamp(start_date))
-        & (df["date"] <= pd.Timestamp(end_date))
-    )
-    return df.loc[mask].reset_index(drop=True)
 
 
 # ── Private fetch helpers ───────────────────────────────────────────────────────
 
+def _fetch_kite(symbol: str, start_date: date, end_date: date) -> Optional[pd.DataFrame]:
+    """Daily candles from Kite Connect (as traded). None if not connected."""
+    try:
+        from app.data import kite
+    except ImportError:
+        return None
+    if not kite.is_configured():
+        return None
+    try:
+        client = kite.get_client()
+        exchange, tradingsymbol = kite.kite_symbol(symbol)
+        token = client.instrument_token(tradingsymbol, exchange)
+        df = client.historical(
+            token, "day",
+            datetime.combine(start_date, datetime.min.time()),
+            datetime.combine(end_date, datetime.max.time().replace(microsecond=0)),
+        )
+    except kite.KiteNotConnected:
+        return None
+    except Exception as e:
+        logger.warning("Kite daily fetch failed for %s: %s", symbol, e)
+        return None
+    if df.empty:
+        return None
+    df["date"] = normalize_session_dates(df["date"])
+    df = df[["date", "open", "high", "low", "close", "volume"]].copy()
+    df["source"] = f"kite:{exchange}:{tradingsymbol}"
+    return df
+
+
 def _fetch_jugaad(
     symbol: str, start_date: date, end_date: date
 ) -> Optional[pd.DataFrame]:
-    """Fetch OHLCV from jugaad-data.  Returns None on failure."""
+    """Fetch OHLCV from jugaad-data (NSE archives).  Returns None on failure."""
     try:
         from jugaad_data.nse import stock_df
 
@@ -290,18 +422,18 @@ def _fetch_jugaad(
                 col_map[col] = "volume"
 
         df = df.rename(columns=col_map)
-        needed = {"date", "open", "high", "low", "close", "volume"}
-        if not needed.issubset(set(df.columns)):
+        needed = ["date", "open", "high", "low", "close", "volume"]
+        if not set(needed).issubset(set(df.columns)):
             logger.warning(
                 "jugaad-data columns mismatch for %s: got %s", symbol, list(df.columns)
             )
             return None
 
-        df = df[list(needed)].copy()
-        df["date"] = pd.to_datetime(df["date"])
+        df = df[needed].copy()
+        df["date"] = normalize_session_dates(df["date"])
         for col in ("open", "high", "low", "close", "volume"):
             df[col] = pd.to_numeric(df[col], errors="coerce")
-
+        df["source"] = "jugaad-data:NSE_EQ"
         return df
 
     except ImportError:
@@ -315,16 +447,18 @@ def _fetch_jugaad(
 def _fetch_yfinance(
     symbol: str, start_date: date, end_date: date
 ) -> Optional[pd.DataFrame]:
-    """Fetch OHLCV from yfinance.  Returns None on failure."""
+    """Fetch OHLCV from yfinance (`.NS`).  Returns None on failure."""
     try:
         import yfinance as yf
 
-        ticker = yf.Ticker(_yfinance_symbol(symbol))
+        yf_symbol = _yfinance_symbol(symbol)
+        ticker = yf.Ticker(yf_symbol)
         # yfinance end is exclusive, so add 1 day
         df = ticker.history(
             start=start_date.isoformat(),
             end=(end_date + timedelta(days=1)).isoformat(),
-            auto_adjust=True,  # adjust for splits/dividends
+            # As-traded prices, matching NSE archives (jugaad-data) exactly.
+            auto_adjust=False,
         )
         if df is None or df.empty:
             return None
@@ -340,8 +474,10 @@ def _fetch_yfinance(
                 "Volume": "volume",
             }
         )
-        df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
-        return df[["date", "open", "high", "low", "close", "volume"]].copy()
+        df["date"] = normalize_session_dates(df["date"])
+        out = df[["date", "open", "high", "low", "close", "volume"]].copy()
+        out["source"] = f"yfinance:{yf_symbol}"
+        return out
 
     except ImportError:
         logger.info("yfinance not installed, skipping")

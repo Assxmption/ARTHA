@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Ping Supabase Database and Auth APIs
         env:
-          SUPABASE_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0YWpzcGRna3RmeXJyd3l3bGttIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk2MjAwMjAsImV4cCI6MjEwNTE5NjAyMH0.-USyhdVHeg1azUFxevtr9ZjdnYIOzqbNKRDF6s3Racw' }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           echo "Pinging Supabase Database API (querying watchlists table to reset Postgres inactivity timer)..."
           DB_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \

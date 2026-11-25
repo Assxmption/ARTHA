@@ -51,3 +51,30 @@ def test_fallback_report_excludes_blocked_signal(tmp_path):
     assert "Quant Signals" not in report
     assert signal.fact_id not in report
     assert "corporate_action_pending" in report
+
+
+def test_fallback_report_with_numeric_headlines_passes_citation_gate(tmp_path):
+    """Regression: headlines containing figures used to be uncited lines,
+    so the deterministic fallback report failed its own rule-10 gate."""
+    from app.agents.writer_agent import check_citations
+    from app.factstore.schemas import FundamentalRow, NewsSignal
+
+    store = FactStore(db_path=str(tmp_path / "fallback.db"))
+    job_id = "fallback-headlines"
+    store.put_facts([
+        FundamentalRow(
+            job_id=job_id, source="YFINANCE_FY2025", symbol="TCS",
+            fiscal_year=2025, metric="revenue", value=255324.0, unit="INR_crore",
+        ),
+        NewsSignal(
+            job_id=job_id, source="FINBERT_LOCAL", symbol_or_commodity="TCS",
+            headline_count=3, sentiment_score=0.21, as_of=date(2026, 11, 20),
+            headlines_sample=[
+                "TCS Q2 profit rises 9% to Rs 12,075 crore",
+                "TCS bags $1.2 billion deal\nfrom UK insurer",
+            ],
+        ),
+    ])
+    report = _build_fallback_report(job_id, store, "TCS")
+    result = check_citations(report, job_id, store)
+    assert result["valid"] is True, result

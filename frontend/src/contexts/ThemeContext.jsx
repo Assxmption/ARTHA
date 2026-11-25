@@ -1,26 +1,40 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { setPreference, usePreferences } from '../lib/preferences';
 
 const ThemeContext = createContext();
 
-export function ThemeProvider({ children }) {
-  const [isDark, setIsDark] = useState(true); // Default to night (lacquer) mode
+function systemPrefersDark() {
+  try {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  } catch {
+    return true;
+  }
+}
 
-  const toggleTheme = () => {
-    setIsDark(!isDark);
-  };
+export function ThemeProvider({ children }) {
+  const { theme } = usePreferences(); // 'dark' | 'light' | 'system'
+  const [systemDark, setSystemDark] = useState(systemPrefersDark);
 
   useEffect(() => {
-    if (isDark) {
-      document.documentElement.classList.remove('light-theme');
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.add('light-theme');
-      document.documentElement.classList.remove('dark');
-    }
+    let mq;
+    try { mq = window.matchMedia('(prefers-color-scheme: dark)'); } catch { return undefined; }
+    const onChange = (e) => setSystemDark(e.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
+
+  const isDark = theme === 'system' ? systemDark : theme === 'dark';
+
+  // The top-bar switch picks an explicit theme (leaving "system" mode).
+  const toggleTheme = () => setPreference('theme', isDark ? 'light' : 'dark');
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('light-theme', !isDark);
+    document.documentElement.classList.toggle('dark', isDark);
   }, [isDark]);
 
   return (
-    <ThemeContext.Provider value={{ isDark, toggleTheme }}>
+    <ThemeContext.Provider value={{ isDark, theme, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );

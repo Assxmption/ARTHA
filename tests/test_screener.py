@@ -392,3 +392,25 @@ class TestBuildCache:
         assert abs(r["roe"] - 20.0) < 0.1  # 0.2 * 100
         assert abs(r["dividend_yield"] - 0.02) < 0.01  # raw 0.02 stored directly (no pct transform)
         assert abs(r["market_cap"] - 10000.0) < 1  # 1e11 / 1e7
+
+
+def test_statement_currency_fields_convert_with_fx(monkeypatch):
+    """Free cash flow is in the statement currency (USD for Infosys)."""
+    from app.data import screener_cache as sc
+
+    info = {"regularMarketPrice": 1100.0, "financialCurrency": "USD",
+            "freeCashflow": 3_300_000_000, "marketCap": 4.47e12}
+    monkeypatch.setattr(sc, "_fetch_single_info", lambda symbol: info)
+    monkeypatch.setattr(sc, "_fx_to_inr", lambda ccy: 90.0)
+    row = sc._fetch_and_transform("INFY", "now")
+    assert row["free_cashflow"] == round(3_300_000_000 * 90.0 / 1e7, 4)
+    assert row["market_cap"] == round(4.47e12 / 1e7, 4)  # already INR
+
+
+def test_statement_currency_field_left_empty_without_fx(monkeypatch):
+    from app.data import screener_cache as sc
+
+    info = {"regularMarketPrice": 1100.0, "financialCurrency": "USD", "freeCashflow": 3.3e9}
+    monkeypatch.setattr(sc, "_fetch_single_info", lambda symbol: info)
+    monkeypatch.setattr(sc, "_fx_to_inr", lambda ccy: None)
+    assert sc._fetch_and_transform("INFY", "now")["free_cashflow"] is None

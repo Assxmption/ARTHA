@@ -42,8 +42,15 @@ htmlcov/
 .hypothesis/
 
 # ── Data cache (large files, regenerated on demand) ───────────────────────
-data_cache/
+data_cache/*
 *.parquet
+# Small hand-curated reference data the app and tests need on a fresh clone.
+!data_cache/nse/
+data_cache/nse/*
+!data_cache/nse/security_master.json
+!data_cache/mcx/
+data_cache/mcx/*
+!data_cache/mcx/contracts.json
 
 # ── Database files (local dev only — production uses Supabase Postgres) ──
 *.db
@@ -72,3 +79,9 @@ frontend/build/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# Local tooling and nested env files (secrets)
+.claude/
+**/.env
+**/.env.*
+!**/.env.example

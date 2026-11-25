@@ -13,14 +13,16 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.quant.paper_trade import PaperTradingDaemon, DaemonState
-from app.security.auth import get_current_user
+from app.security.auth import require_admin
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/paper-trade", tags=["paper-trading"])
+# Legacy daemon (superseded by /api/paper). Every route changes or reveals the
+# operator's virtual book, so the whole router is operator-only.
+router = APIRouter(prefix="/api/paper-trade", tags=["paper-trading"], dependencies=[Depends(require_admin)])
 
 # ── Module-level daemon instance ────────────────────────────────────────────────
 # Initialized lazily on first start.  Only one daemon can run at a time.
@@ -38,9 +40,9 @@ DEFAULT_SYMBOLS = [
 # ── Request/Response Models ────────────────────────────────────────────────────
 
 class StartRequest(BaseModel):
-    symbols: list[str] | None = None
-    initial_capital: float = 5_00_00_000.0  # ₹5 Cr
-    rebalance_interval_min: int = 15
+    symbols: list[str] | None = Field(None, max_length=200)
+    initial_capital: float = Field(5_00_00_000.0, gt=0, le=1e12)  # ₹5 Cr
+    rebalance_interval_min: int = Field(15, ge=1, le=1440)
 
 
 class ResetRequest(BaseModel):
@@ -51,7 +53,7 @@ class ResetRequest(BaseModel):
 # ── Routes ──────────────────────────────────────────────────────────────────────
 
 @router.post("/start")
-async def start_daemon(request: StartRequest, user=Depends(get_current_user)):
+async def start_daemon(request: StartRequest, user=Depends(require_admin)):
     """Start the paper trading daemon."""
     global _daemon
 
@@ -79,7 +81,7 @@ async def start_daemon(request: StartRequest, user=Depends(get_current_user)):
 
 
 @router.post("/stop")
-async def stop_daemon(user=Depends(get_current_user)):
+async def stop_daemon(user=Depends(require_admin)):
     """Stop the paper trading daemon."""
     global _daemon
 
@@ -91,7 +93,7 @@ async def stop_daemon(user=Depends(get_current_user)):
 
 
 @router.get("/status")
-async def get_status(user=Depends(get_current_user)):
+async def get_status(user=Depends(require_admin)):
     """Get current daemon status, NAV, PnL, regime."""
     if not _daemon:
         return {
@@ -124,7 +126,7 @@ async def get_status(user=Depends(get_current_user)):
 
 
 @router.get("/portfolio")
-async def get_portfolio(user=Depends(get_current_user)):
+async def get_portfolio(user=Depends(require_admin)):
     """Get current positions and cash balance."""
     if not _daemon:
         raise HTTPException(404, "Daemon not initialized")
@@ -133,7 +135,7 @@ async def get_portfolio(user=Depends(get_current_user)):
 
 
 @router.get("/trades")
-async def get_trades(limit: int = 50, offset: int = 0, user=Depends(get_current_user)):
+async def get_trades(limit: int = 50, offset: int = 0, user=Depends(require_admin)):
     """Get trade history (most recent first)."""
     if not _daemon:
         raise HTTPException(404, "Daemon not initialized")
@@ -143,7 +145,7 @@ async def get_trades(limit: int = 50, offset: int = 0, user=Depends(get_current_
 
 
 @router.get("/nav-history")
-async def get_nav_history(limit: int = 365, user=Depends(get_current_user)):
+async def get_nav_history(limit: int = 365, user=Depends(require_admin)):
     """Get NAV time series for charting."""
     if not _daemon:
         raise HTTPException(404, "Daemon not initialized")
@@ -153,7 +155,7 @@ async def get_nav_history(limit: int = 365, user=Depends(get_current_user)):
 
 
 @router.post("/reset")
-async def reset_daemon(request: ResetRequest, user=Depends(get_current_user)):
+async def reset_daemon(request: ResetRequest, user=Depends(require_admin)):
     """
     Reset virtual capital and clear all history.
 
@@ -177,7 +179,7 @@ async def reset_daemon(request: ResetRequest, user=Depends(get_current_user)):
 
 
 @router.get("/validation")
-async def get_validation(user=Depends(get_current_user)):
+async def get_validation(user=Depends(require_admin)):
     """
     Forward-test validation: compare live performance against backtest expectations.
 
@@ -191,7 +193,7 @@ async def get_validation(user=Depends(get_current_user)):
 
 
 @router.get("/regime")
-async def get_regime(user=Depends(get_current_user)):
+async def get_regime(user=Depends(require_admin)):
     """Get current market regime and regime history from NAV snapshots."""
     if not _daemon:
         raise HTTPException(404, "Daemon not initialized")
@@ -211,7 +213,7 @@ async def get_regime(user=Depends(get_current_user)):
 
 
 @router.post("/retrain")
-async def force_retrain(user=Depends(get_current_user)):
+async def force_retrain(user=Depends(require_admin)):
     """
     Force ML alpha and regime model retraining.
 
@@ -226,7 +228,7 @@ async def force_retrain(user=Depends(get_current_user)):
 
 
 @router.get("/strategy-weights")
-async def get_strategy_weights(user=Depends(get_current_user)):
+async def get_strategy_weights(user=Depends(require_admin)):
     """
     Get current per-strategy allocation weights and signal details.
 

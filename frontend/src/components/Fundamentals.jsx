@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useRememberSymbol } from '../lib/activeSymbol';
 import { FileText, ArrowLeft, Loader2, AlertTriangle, ChevronRight, Activity, TrendingUp, Search } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { apiFetch } from '../lib/api';
 
 export default function Fundamentals() {
   const { symbol } = useParams();
+  useRememberSymbol(symbol);
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loadingData, setLoadingData] = useState(true);
@@ -20,7 +23,7 @@ export default function Fundamentals() {
     setError(null);
 
     // Fetch tabular data first (fast)
-    fetch(`/api/quant/fundamentals/${symbol}`)
+    apiFetch(`/api/quant/fundamentals/${symbol}`)
       .then(res => {
         if (!res.ok) throw new Error(`Failed to fetch fundamentals for ${symbol}`);
         return res.json();
@@ -35,8 +38,15 @@ export default function Fundamentals() {
       .finally(() => setLoadingData(false));
 
     // Fetch narrative as SSE stream
-    fetch(`/api/quant/fundamentals/${symbol}/narrative_stream`)
+    apiFetch(`/api/quant/fundamentals/${encodeURIComponent(symbol)}/narrative_stream`, { llm: true })
       .then(async (res) => {
+        if (res.status === 402 || res.status === 400) {
+          // No AI key available here (demo quota used up, or keys required on this deployment).
+          const body = await res.json().catch(() => ({}));
+          setNarrative(`## Fundamental Analysis\n\n*${body?.detail?.message || 'AI narrative unavailable.'}* Add your own free Groq or Gemini key in **Settings → AI model keys**. The figures on this page do not depend on it.`);
+          setLoadingNarrative(false);
+          return;
+        }
         if (!res.ok) throw new Error(`Failed to start narrative stream for ${symbol}`);
         
         // Hide loading spinner as soon as the connection opens
@@ -141,7 +151,15 @@ export default function Fundamentals() {
                     ),
                     strong: ({node, ...props}) => (
                       <strong className="text-on-surface font-mono font-medium bg-surface-container-low px-1 py-0.5 rounded" {...props} />
-                    )
+                    ),
+                    // Model output never loads remote images (no tracking beacons)
+                    // and links leave the app safely.
+                    img: () => null,
+                    a: ({node, href, ...props}) => (
+                      /^https?:\/\//i.test(href || '')
+                        ? <a href={href} target="_blank" rel="noopener noreferrer nofollow" {...props} />
+                        : <span {...props} />
+                    ),
                   }}
                 >
                   {narrative}

@@ -1,0 +1,1075 @@
+{
+  "session": "2026-11-23",
+  "previous_session": "2026-11-20",
+  "generated_at": "2026-11-23T18:48:53",
+  "session_complete": true,
+  "sources": {
+    "minute": "kite (1-minute, exchange data)",
+    "daily": "kite (daily official close)",
+    "engine": "yfinance adjusted close (auto_adjust=True); NIFTY 50 session calendar"
+  },
+  "book": {
+    "as_of_close": "2026-11-20",
+    "symbols": 42,
+    "net_exposure": 0.591,
+    "gross_exposure": 0.7703,
+    "vol_target_scale": 0.8769,
+    "weights": {
+      "ADANIENT": 0.056458,
+      "ADANIPORTS": 0.038309,
+      "APOLLOHOSP": 0.027844,
+      "ASIANPAINT": 0.009667,
+      "BAJAJ-AUTO": 0.038309,
+      "BRITANNIA": -0.002511,
+      "COALINDIA": 0.008482,
+      "DABUR": -0.002511,
+      "DIVISLAB": 0.028622,
+      "DLF": 0.00849,
+      "EICHERMOT": 0.009687,
+      "GRASIM": 0.00849,
+      "HAVELLS": -0.010993,
+      "HDFCBANK": -0.001325,
+      "HINDALCO": 0.029819,
+      "HINDUNILVR": -0.001325,
+      "INDUSINDBK": 0.039486,
+      "INFY": -0.010993,
+      "ITC": -0.010993,
+      "JIOFIN": -0.002511,
+      "LICI": 0.018149,
+      "M&M": 0.009667,
+      "MARUTI": 0.009667,
+      "MOTHERSON": 0.046791,
+      "NESTLEIND": 0.018169,
+      "NYKAA": 0.038309,
+      "PIDILITIND": 0.008482,
+      "POWERGRID": 0.009667,
+      "SBILIFE": 0.009667,
+      "SBIN": 0.029819,
+      "SHRIRAMFIN": 0.029819,
+      "SIEMENS": 0.037104,
+      "SUNPHARMA": 0.029799,
+      "TATAPOWER": 0.008482,
+      "TCS": -0.010993,
+      "TECHM": 0.00849,
+      "TITAN": 0.038309,
+      "TRENT": -0.010993,
+      "UPL": -0.010993,
+      "VEDL": -0.002511,
+      "WIPRO": -0.010993,
+      "YESBANK": 0.026639
+    },
+    "sleeve_rebalance": {
+      "momentum_12m_skip_1m": {
+        "decision_date": "2026-10-22",
+        "next_decision_date": "+1 sessions"
+      },
+      "momentum_12m_skip_3m": {
+        "decision_date": "2026-10-22",
+        "next_decision_date": "+1 sessions"
+      },
+      "momentum_6m": {
+        "decision_date": "2026-10-22",
+        "next_decision_date": "+1 sessions"
+      },
+      "reversal_1m": {
+        "decision_date": "2026-11-17",
+        "next_decision_date": "+2 sessions"
+      },
+      "reversal_3m": {
+        "decision_date": "2026-10-22",
+        "next_decision_date": "+1 sessions"
+      },
+      "momentum_long_short": {
+        "decision_date": "2026-10-22",
+        "next_decision_date": "+1 sessions"
+      }
+    },
+    "engine_oos_validated": false
+  },
+  "result": {
+    "book_return_eod": -0.005161,
+    "nifty_return_eod": -0.016829,
+    "excess_vs_nifty": 0.011669,
+    "book_intraday_high": 0.004251,
+    "book_intraday_low": -0.005666,
+    "book_intraday_max_drawdown": 0.009876,
+    "last_minute_vs_official_close_gap": 0.0,
+    "pairs_validated": 1,
+    "pairs_open": 1,
+    "pair_returns_eod": {
+      "KOTAKBANK/PNB": -0.015439
+    },
+    "top_contributors": [
+      {
+        "symbol": "SHRIRAMFIN",
+        "contribution": 0.000672
+      },
+      {
+        "symbol": "TITAN",
+        "contribution": 0.000522
+      },
+      {
+        "symbol": "HAVELLS",
+        "contribution": 0.000259
+      },
+      {
+        "symbol": "UPL",
+        "contribution": 0.000211
+      },
+      {
+        "symbol": "TRENT",
+        "contribution": 0.000189
+      }
+    ],
+    "bottom_contributors": [
+      {
+        "symbol": "INDUSINDBK",
+        "contribution": -0.001553
+      },
+      {
+        "symbol": "HINDALCO",
+        "contribution": -0.00093
+      },
+      {
+        "symbol": "SBIN",
+        "contribution": -0.000887
+      },
+      {
+        "symbol": "ADANIENT",
+        "contribution": -0.000732
+      },
+      {
+        "symbol": "NYKAA",
+        "contribution": -0.000631
+      }
+    ]
+  },
+  "curves": {
+    "book": [
+      {
+        "time": "09:15",
+        "value": 0.004251
+      },
+      {
+        "time": "09:20",
+        "value": 0.001838
+      },
+      {
+        "time": "09:25",
+        "value": -0.00074
+      },
+      {
+        "time": "09:30",
+        "value": -0.000504
+      },
+      {
+        "time": "09:35",
+        "value": -0.002768
+      },
+      {
+        "time": "09:40",
+        "value": -0.001768
+      },
+      {
+        "time": "09:45",
+        "value": -0.000967
+      },
+      {
+        "time": "09:50",
+        "value": -0.001374
+      },
+      {
+        "time": "09:55",
+        "value": -0.001253
+      },
+      {
+        "time": "10:00",
+        "value": -0.001284
+      },
+      {
+        "time": "10:05",
+        "value": -0.001067
+      },
+      {
+        "time": "10:10",
+        "value": -0.002376
+      },
+      {
+        "time": "10:15",
+        "value": -0.002063
+      },
+      {
+        "time": "10:20",
+        "value": -0.001739
+      },
+      {
+        "time": "10:25",
+        "value": -0.00154
+      },
+      {
+        "time": "10:30",
+        "value": -0.001242
+      },
+      {
+        "time": "10:35",
+        "value": -0.00142
+      },
+      {
+        "time": "10:40",
+        "value": -0.001671
+      },
+      {
+        "time": "10:45",
+        "value": -0.001948
+      },
+      {
+        "time": "10:50",
+        "value": -0.001476
+      },
+      {
+        "time": "10:55",
+        "value": -0.001656
+      },
+      {
+        "time": "11:00",
+        "value": -0.001866
+      },
+      {
+        "time": "11:05",
+        "value": -0.002108
+      },
+      {
+        "time": "11:10",
+        "value": -0.001313
+      },
+      {
+        "time": "11:15",
+        "value": 2.1e-05
+      },
+      {
+        "time": "11:20",
+        "value": -0.001023
+      },
+      {
+        "time": "11:25",
+        "value": -0.00012
+      },
+      {
+        "time": "11:30",
+        "value": -0.000167
+      },
+      {
+        "time": "11:35",
+        "value": -0.000243
+      },
+      {
+        "time": "11:40",
+        "value": -0.000601
+      },
+      {
+        "time": "11:45",
+        "value": -0.000749
+      },
+      {
+        "time": "11:50",
+        "value": -0.001025
+      },
+      {
+        "time": "11:55",
+        "value": -0.001207
+      },
+      {
+        "time": "12:00",
+        "value": -0.001679
+      },
+      {
+        "time": "12:05",
+        "value": -0.002033
+      },
+      {
+        "time": "12:10",
+        "value": -0.001297
+      },
+      {
+        "time": "12:15",
+        "value": -0.001265
+      },
+      {
+        "time": "12:20",
+        "value": -0.001305
+      },
+      {
+        "time": "12:25",
+        "value": -0.001287
+      },
+      {
+        "time": "12:30",
+        "value": -0.001521
+      },
+      {
+        "time": "12:35",
+        "value": -0.001479
+      },
+      {
+        "time": "12:40",
+        "value": -0.001775
+      },
+      {
+        "time": "12:45",
+        "value": -0.001487
+      },
+      {
+        "time": "12:50",
+        "value": -0.00223
+      },
+      {
+        "time": "12:55",
+        "value": -0.002628
+      },
+      {
+        "time": "13:00",
+        "value": -0.002753
+      },
+      {
+        "time": "13:05",
+        "value": -0.003074
+      },
+      {
+        "time": "13:10",
+        "value": -0.003307
+      },
+      {
+        "time": "13:15",
+        "value": -0.003402
+      },
+      {
+        "time": "13:20",
+        "value": -0.003403
+      },
+      {
+        "time": "13:25",
+        "value": -0.003638
+      },
+      {
+        "time": "13:30",
+        "value": -0.003487
+      },
+      {
+        "time": "13:35",
+        "value": -0.003497
+      },
+      {
+        "time": "13:40",
+        "value": -0.003868
+      },
+      {
+        "time": "13:45",
+        "value": -0.003957
+      },
+      {
+        "time": "13:50",
+        "value": -0.00403
+      },
+      {
+        "time": "13:55",
+        "value": -0.003803
+      },
+      {
+        "time": "14:00",
+        "value": -0.00382
+      },
+      {
+        "time": "14:05",
+        "value": -0.004304
+      },
+      {
+        "time": "14:10",
+        "value": -0.004354
+      },
+      {
+        "time": "14:15",
+        "value": -0.004299
+      },
+      {
+        "time": "14:20",
+        "value": -0.003339
+      },
+      {
+        "time": "14:25",
+        "value": -0.003462
+      },
+      {
+        "time": "14:30",
+        "value": -0.003221
+      },
+      {
+        "time": "14:35",
+        "value": -0.0036
+      },
+      {
+        "time": "14:40",
+        "value": -0.003847
+      },
+      {
+        "time": "14:45",
+        "value": -0.003843
+      },
+      {
+        "time": "14:50",
+        "value": -0.004316
+      },
+      {
+        "time": "14:55",
+        "value": -0.004813
+      },
+      {
+        "time": "15:00",
+        "value": -0.005278
+      },
+      {
+        "time": "15:05",
+        "value": -0.00548
+      },
+      {
+        "time": "15:10",
+        "value": -0.005363
+      },
+      {
+        "time": "15:15",
+        "value": -0.005161
+      },
+      {
+        "time": "15:20",
+        "value": -0.005161
+      },
+      {
+        "time": "15:25",
+        "value": -0.005161
+      },
+      {
+        "time": "15:29",
+        "value": -0.005161
+      }
+    ],
+    "nifty": [
+      {
+        "time": "09:15",
+        "value": 0.006845
+      },
+      {
+        "time": "09:20",
+        "value": 0.001562
+      },
+      {
+        "time": "09:25",
+        "value": -0.002407
+      },
+      {
+        "time": "09:30",
+        "value": -0.003626
+      },
+      {
+        "time": "09:35",
+        "value": -0.008397
+      },
+      {
+        "time": "09:40",
+        "value": -0.005944
+      },
+      {
+        "time": "09:45",
+        "value": -0.004818
+      },
+      {
+        "time": "09:50",
+        "value": -0.005909
+      },
+      {
+        "time": "09:55",
+        "value": -0.00573
+      },
+      {
+        "time": "10:00",
+        "value": -0.006814
+      },
+      {
+        "time": "10:05",
+        "value": -0.005789
+      },
+      {
+        "time": "10:10",
+        "value": -0.007329
+      },
+      {
+        "time": "10:15",
+        "value": -0.006616
+      },
+      {
+        "time": "10:20",
+        "value": -0.007951
+      },
+      {
+        "time": "10:25",
+        "value": -0.007674
+      },
+      {
+        "time": "10:30",
+        "value": -0.006779
+      },
+      {
+        "time": "10:35",
+        "value": -0.00761
+      },
+      {
+        "time": "10:40",
+        "value": -0.007971
+      },
+      {
+        "time": "10:45",
+        "value": -0.008471
+      },
+      {
+        "time": "10:50",
+        "value": -0.008149
+      },
+      {
+        "time": "10:55",
+        "value": -0.008843
+      },
+      {
+        "time": "11:00",
+        "value": -0.009428
+      },
+      {
+        "time": "11:05",
+        "value": -0.010172
+      },
+      {
+        "time": "11:10",
+        "value": -0.008932
+      },
+      {
+        "time": "11:15",
+        "value": -0.006765
+      },
+      {
+        "time": "11:20",
+        "value": -0.008068
+      },
+      {
+        "time": "11:25",
+        "value": -0.007112
+      },
+      {
+        "time": "11:30",
+        "value": -0.00707
+      },
+      {
+        "time": "11:35",
+        "value": -0.007665
+      },
+      {
+        "time": "11:40",
+        "value": -0.009172
+      },
+      {
+        "time": "11:45",
+        "value": -0.009258
+      },
+      {
+        "time": "11:50",
+        "value": -0.009874
+      },
+      {
+        "time": "11:55",
+        "value": -0.010653
+      },
+      {
+        "time": "12:00",
+        "value": -0.011298
+      },
+      {
+        "time": "12:05",
+        "value": -0.01185
+      },
+      {
+        "time": "12:10",
+        "value": -0.010506
+      },
+      {
+        "time": "12:15",
+        "value": -0.010529
+      },
+      {
+        "time": "12:20",
+        "value": -0.011095
+      },
+      {
+        "time": "12:25",
+        "value": -0.011254
+      },
+      {
+        "time": "12:30",
+        "value": -0.011403
+      },
+      {
+        "time": "12:35",
+        "value": -0.010694
+      },
+      {
+        "time": "12:40",
+        "value": -0.011546
+      },
+      {
+        "time": "12:45",
+        "value": -0.011143
+      },
+      {
+        "time": "12:50",
+        "value": -0.012027
+      },
+      {
+        "time": "12:55",
+        "value": -0.012705
+      },
+      {
+        "time": "13:00",
+        "value": -0.012451
+      },
+      {
+        "time": "13:05",
+        "value": -0.012874
+      },
+      {
+        "time": "13:10",
+        "value": -0.013236
+      },
+      {
+        "time": "13:15",
+        "value": -0.013263
+      },
+      {
+        "time": "13:20",
+        "value": -0.013294
+      },
+      {
+        "time": "13:25",
+        "value": -0.013754
+      },
+      {
+        "time": "13:30",
+        "value": -0.013333
+      },
+      {
+        "time": "13:35",
+        "value": -0.013174
+      },
+      {
+        "time": "13:40",
+        "value": -0.013885
+      },
+      {
+        "time": "13:45",
+        "value": -0.013986
+      },
+      {
+        "time": "13:50",
+        "value": -0.013579
+      },
+      {
+        "time": "13:55",
+        "value": -0.013308
+      },
+      {
+        "time": "14:00",
+        "value": -0.013471
+      },
+      {
+        "time": "14:05",
+        "value": -0.014407
+      },
+      {
+        "time": "14:10",
+        "value": -0.014695
+      },
+      {
+        "time": "14:15",
+        "value": -0.014692
+      },
+      {
+        "time": "14:20",
+        "value": -0.013519
+      },
+      {
+        "time": "14:25",
+        "value": -0.013443
+      },
+      {
+        "time": "14:30",
+        "value": -0.013405
+      },
+      {
+        "time": "14:35",
+        "value": -0.013843
+      },
+      {
+        "time": "14:40",
+        "value": -0.014469
+      },
+      {
+        "time": "14:45",
+        "value": -0.01463
+      },
+      {
+        "time": "14:50",
+        "value": -0.015552
+      },
+      {
+        "time": "14:55",
+        "value": -0.015922
+      },
+      {
+        "time": "15:00",
+        "value": -0.016649
+      },
+      {
+        "time": "15:05",
+        "value": -0.016674
+      },
+      {
+        "time": "15:10",
+        "value": -0.016885
+      },
+      {
+        "time": "15:15",
+        "value": -0.016829
+      },
+      {
+        "time": "15:20",
+        "value": -0.016829
+      },
+      {
+        "time": "15:25",
+        "value": -0.016829
+      },
+      {
+        "time": "15:29",
+        "value": -0.016829
+      }
+    ],
+    "pair:KOTAKBANK/PNB": [
+      {
+        "time": "09:15",
+        "value": -0.00096
+      },
+      {
+        "time": "09:20",
+        "value": -0.005171
+      },
+      {
+        "time": "09:25",
+        "value": -0.008858
+      },
+      {
+        "time": "09:30",
+        "value": -0.01063
+      },
+      {
+        "time": "09:35",
+        "value": -0.012314
+      },
+      {
+        "time": "09:40",
+        "value": -0.011183
+      },
+      {
+        "time": "09:45",
+        "value": -0.012134
+      },
+      {
+        "time": "09:50",
+        "value": -0.012007
+      },
+      {
+        "time": "09:55",
+        "value": -0.011641
+      },
+      {
+        "time": "10:00",
+        "value": -0.013354
+      },
+      {
+        "time": "10:05",
+        "value": -0.012208
+      },
+      {
+        "time": "10:10",
+        "value": -0.011994
+      },
+      {
+        "time": "10:15",
+        "value": -0.011093
+      },
+      {
+        "time": "10:20",
+        "value": -0.00856
+      },
+      {
+        "time": "10:25",
+        "value": -0.010013
+      },
+      {
+        "time": "10:30",
+        "value": -0.009451
+      },
+      {
+        "time": "10:35",
+        "value": -0.009658
+      },
+      {
+        "time": "10:40",
+        "value": -0.009615
+      },
+      {
+        "time": "10:45",
+        "value": -0.010089
+      },
+      {
+        "time": "10:50",
+        "value": -0.011175
+      },
+      {
+        "time": "10:55",
+        "value": -0.011888
+      },
+      {
+        "time": "11:00",
+        "value": -0.010252
+      },
+      {
+        "time": "11:05",
+        "value": -0.011604
+      },
+      {
+        "time": "11:10",
+        "value": -0.011057
+      },
+      {
+        "time": "11:15",
+        "value": -0.009791
+      },
+      {
+        "time": "11:20",
+        "value": -0.012311
+      },
+      {
+        "time": "11:25",
+        "value": -0.011463
+      },
+      {
+        "time": "11:30",
+        "value": -0.011884
+      },
+      {
+        "time": "11:35",
+        "value": -0.012832
+      },
+      {
+        "time": "11:40",
+        "value": -0.013383
+      },
+      {
+        "time": "11:45",
+        "value": -0.013451
+      },
+      {
+        "time": "11:50",
+        "value": -0.01247
+      },
+      {
+        "time": "11:55",
+        "value": -0.013214
+      },
+      {
+        "time": "12:00",
+        "value": -0.012673
+      },
+      {
+        "time": "12:05",
+        "value": -0.011945
+      },
+      {
+        "time": "12:10",
+        "value": -0.010205
+      },
+      {
+        "time": "12:15",
+        "value": -0.010548
+      },
+      {
+        "time": "12:20",
+        "value": -0.010611
+      },
+      {
+        "time": "12:25",
+        "value": -0.010297
+      },
+      {
+        "time": "12:30",
+        "value": -0.010691
+      },
+      {
+        "time": "12:35",
+        "value": -0.010028
+      },
+      {
+        "time": "12:40",
+        "value": -0.010291
+      },
+      {
+        "time": "12:45",
+        "value": -0.010388
+      },
+      {
+        "time": "12:50",
+        "value": -0.011401
+      },
+      {
+        "time": "12:55",
+        "value": -0.010948
+      },
+      {
+        "time": "13:00",
+        "value": -0.01088
+      },
+      {
+        "time": "13:05",
+        "value": -0.011338
+      },
+      {
+        "time": "13:10",
+        "value": -0.011465
+      },
+      {
+        "time": "13:15",
+        "value": -0.011126
+      },
+      {
+        "time": "13:20",
+        "value": -0.010652
+      },
+      {
+        "time": "13:25",
+        "value": -0.010701
+      },
+      {
+        "time": "13:30",
+        "value": -0.010845
+      },
+      {
+        "time": "13:35",
+        "value": -0.010647
+      },
+      {
+        "time": "13:40",
+        "value": -0.010769
+      },
+      {
+        "time": "13:45",
+        "value": -0.011622
+      },
+      {
+        "time": "13:50",
+        "value": -0.011092
+      },
+      {
+        "time": "13:55",
+        "value": -0.010745
+      },
+      {
+        "time": "14:00",
+        "value": -0.010122
+      },
+      {
+        "time": "14:05",
+        "value": -0.010663
+      },
+      {
+        "time": "14:10",
+        "value": -0.010865
+      },
+      {
+        "time": "14:15",
+        "value": -0.009609
+      },
+      {
+        "time": "14:20",
+        "value": -0.008959
+      },
+      {
+        "time": "14:25",
+        "value": -0.009205
+      },
+      {
+        "time": "14:30",
+        "value": -0.009321
+      },
+      {
+        "time": "14:35",
+        "value": -0.009724
+      },
+      {
+        "time": "14:40",
+        "value": -0.009814
+      },
+      {
+        "time": "14:45",
+        "value": -0.010286
+      },
+      {
+        "time": "14:50",
+        "value": -0.010542
+      },
+      {
+        "time": "14:55",
+        "value": -0.012207
+      },
+      {
+        "time": "15:00",
+        "value": -0.012501
+      },
+      {
+        "time": "15:05",
+        "value": -0.013842
+      },
+      {
+        "time": "15:10",
+        "value": -0.014168
+      },
+      {
+        "time": "15:15",
+        "value": -0.015439
+      },
+      {
+        "time": "15:20",
+        "value": -0.015439
+      },
+      {
+        "time": "15:25",
+        "value": -0.015439
+      },
+      {
+        "time": "15:29",
+        "value": -0.015439
+      }
+    ]
+  },
+  "data_gaps": [],
+  "caveats": [
+    "One session is statistical noise; it neither validates nor refutes the strategy.",
+    "Book fixed at the previous close; no intraday trading or costs are simulated.",
+    "Intraday curve uses last-trade minute closes; EOD uses NSE official closes.",
+    "Engine portfolio has not passed the out-of-sample gate",
+    "Not investment advice."
+  ]
+}

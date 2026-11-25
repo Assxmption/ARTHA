@@ -340,9 +340,13 @@ class MarketDataFeed:
         """
         Get the latest available price for each symbol.
 
-        Returns {symbol: last_price}. Uses batch download to minimize
-        API calls (one call for all symbols).
+        Returns {symbol: last_price}. Kite Connect LTP (one batched quote
+        call, live) when a session is active; otherwise Yahoo 15-minute bars.
         """
+        kite_prices = self._fetch_kite_prices()
+        if kite_prices:
+            return kite_prices
+        self._source = "yfinance_15m"
         try:
             import yfinance as yf
         except ImportError:
@@ -386,6 +390,24 @@ class MarketDataFeed:
             logger.error("Failed to fetch prices: %s", e)
             return {}
 
+    def _fetch_kite_prices(self) -> dict[str, float]:
+        try:
+            from app.data import kite
+            client = kite.get_client()
+        except Exception:
+            return {}
+        try:
+            keys = {f"NSE:{s}": s for s in self.symbols}
+            ltp = client.ltp(list(keys))
+        except Exception as e:
+            logger.warning("Kite LTP failed, falling back to Yahoo: %s", e)
+            return {}
+        prices = {keys[k]: v for k, v in ltp.items() if k in keys and v > 0}
+        self._last_fetch = datetime.now()
+        self._last_observed_at = self._last_fetch
+        self._source = "kite_ltp"
+        return prices
+
     def fetch_snapshot(self) -> MarketDataSnapshot:
         """Fetch one timestamped snapshot for an atomic signal/fill cycle."""
         prices = self.fetch_current_prices()
@@ -393,7 +415,7 @@ class MarketDataFeed:
         return MarketDataSnapshot(
             prices=prices,
             observed_at=observed_at,
-            source="yfinance_15m",
+            source=getattr(self, "_source", "yfinance_15m"),
             requested_symbols=tuple(self.symbols),
         )
 

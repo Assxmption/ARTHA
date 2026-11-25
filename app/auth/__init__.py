@@ -57,6 +57,10 @@ PROTECTED_PREFIXES = (
     "/api/analyze",
     "/api/sim",
     "/api/analysis-reports",
+    # Linking a broker account / ending its session (callback stays public:
+    # Kite's redirect carries no bearer token; it is guarded by a one-time state).
+    "/api/kite/login",
+    "/api/kite/logout",
 )
 
 

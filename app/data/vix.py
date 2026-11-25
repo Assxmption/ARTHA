@@ -32,6 +32,14 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from app.data.nse import (
+    _IST,
+    _now_ist,
+    _session_closed,
+    ist_today,
+    normalize_session_dates,
+)
+
 logger = logging.getLogger(__name__)
 
 # ── Configuration ───────────────────────────────────────────────────────────────
@@ -75,22 +83,23 @@ def fetch_vix_yfinance(
         return None
 
     if start_date is None:
-        start_date = date.today() - timedelta(days=5 * 365)
+        start_date = ist_today() - timedelta(days=5 * 365)
     if end_date is None:
-        end_date = date.today()
+        end_date = ist_today()
 
     try:
         ticker = yf.Ticker("^INDIAVIX")
         df = ticker.history(
             start=start_date.isoformat(),
-            end=end_date.isoformat(),
+            # yfinance's `end` is exclusive; without +1 day today's VIX is dropped.
+            end=(end_date + timedelta(days=1)).isoformat(),
         )
 
         if df.empty:
             logger.warning("yfinance returned empty data for ^INDIAVIX")
             return None
 
-        df.index = pd.to_datetime(df.index).tz_localize(None)
+        df.index = pd.DatetimeIndex(normalize_session_dates(pd.Series(df.index)))
         df.index.name = "Date"
 
         logger.info(
@@ -102,6 +111,35 @@ def fetch_vix_yfinance(
     except Exception as e:
         logger.error("Failed to fetch India VIX via yfinance: %s", e)
         return None
+
+
+def fetch_vix_kite(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+) -> Optional[pd.DataFrame]:
+    """India VIX daily candles from Kite Connect (None if not connected)."""
+    try:
+        from app.data import kite
+        client = kite.get_client()
+    except Exception:
+        return None
+    start_date = start_date or ist_today() - timedelta(days=5 * 365)
+    end_date = end_date or ist_today()
+    try:
+        token = client.instrument_token("INDIA VIX", "NSE")
+        df = client.historical(
+            token, "day",
+            datetime.combine(start_date, datetime.min.time()),
+            datetime.combine(end_date, datetime.max.time().replace(microsecond=0)),
+        )
+    except Exception as e:
+        logger.warning("Kite VIX fetch failed: %s", e)
+        return None
+    if df.empty:
+        return None
+    df["Date"] = normalize_session_dates(df["date"])
+    df = df.set_index("Date").rename(columns={"open": "Open", "high": "High", "low": "Low", "close": "Close"})
+    return df[["Open", "High", "Low", "Close"]].sort_index()
 
 
 def fetch_vix_jugaad(
@@ -121,9 +159,9 @@ def fetch_vix_jugaad(
         return None
 
     if start_date is None:
-        start_date = date.today() - timedelta(days=5 * 365)
+        start_date = ist_today() - timedelta(days=5 * 365)
     if end_date is None:
-        end_date = date.today()
+        end_date = ist_today()
 
     try:
         df = index_df(
@@ -144,7 +182,9 @@ def fetch_vix_jugaad(
             "LOW": "Low",
             "CLOSE": "Close",
         })
-        df["Date"] = pd.to_datetime(df["Date"])
+        # jugaad-data returns IST dates as naive UTC instants (previous day
+        # 18:30); normalise to the real session date.
+        df["Date"] = normalize_session_dates(df["Date"])
         df = df.set_index("Date").sort_index()
 
         logger.info(
@@ -155,6 +195,13 @@ def fetch_vix_jugaad(
     except Exception as e:
         logger.error("Failed to fetch VIX via jugaad-data: %s", e)
         return None
+
+
+def _cache_written_after_close() -> bool:
+    """True if the cache file was written after today's session closed (IST)."""
+    written = datetime.fromtimestamp(VIX_CACHE_FILE.stat().st_mtime, tz=_IST)
+    now = _now_ist()
+    return written.date() == now.date() and _session_closed(written)
 
 
 # ── Cache Management ────────────────────────────────────────────────────────────
@@ -172,7 +219,7 @@ def _load_cache() -> Optional[pd.DataFrame]:
 
         # Check staleness
         last_date = pd.Timestamp(df.index.max()).date()
-        days_old = (date.today() - last_date).days
+        days_old = (ist_today() - last_date).days
 
         if days_old > VIX_CACHE_STALENESS_DAYS:
             logger.info("VIX cache is %d days old, will refresh", days_old)
@@ -225,8 +272,13 @@ def get_vix_history(
         cached = _load_cache()
         if cached is not None:
             last_date = pd.Timestamp(cached.index.max()).date()
-            days_old = (date.today() - last_date).days
-            if days_old <= VIX_CACHE_STALENESS_DAYS:
+            days_old = (ist_today() - last_date).days
+            # Serve the cache only if it already holds today's *closing*
+            # value; otherwise fetch so the latest session is included.
+            if days_old == 0 and _session_closed() and (
+                VIX_CACHE_FILE.exists()
+                and _cache_written_after_close()
+            ):
                 # Cache is fresh enough
                 if start_date:
                     cached = cached[cached.index >= pd.Timestamp(start_date)]
@@ -235,7 +287,9 @@ def get_vix_history(
                 return cached
 
     # Fetch fresh data
-    df = fetch_vix_yfinance(start_date, end_date)
+    df = fetch_vix_kite(start_date, end_date)
+    if df is None:
+        df = fetch_vix_yfinance(start_date, end_date)
     if df is None:
         df = fetch_vix_jugaad(start_date, end_date)
 
@@ -262,6 +316,7 @@ def get_vix_history(
 def get_vix_close(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    force_refresh: bool = False,
 ) -> pd.Series:
     """
     Get India VIX closing values as a clean Series.
@@ -269,7 +324,7 @@ def get_vix_close(
     Convenience wrapper over get_vix_history() that returns just the
     Close column, with any NaN values forward-filled.
     """
-    df = get_vix_history(start_date, end_date)
+    df = get_vix_history(start_date, end_date, force_refresh=force_refresh)
     if df.empty:
         return pd.Series(dtype=float, name="vix")
 

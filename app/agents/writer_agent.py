@@ -19,8 +19,9 @@ Reference: docs/ARTHA_ARCHITECTURE.md §4.5 (Portfolio Writer row)
 from __future__ import annotations
 
 import logging
+import math
 import re
-from typing import Optional
+from typing import Any, Optional
 
 from crewai import Agent
 
@@ -219,9 +220,14 @@ def build_writer_context(
     sections.append("---")
     sections.append(
         "**INSTRUCTIONS**: Write a comprehensive report about "
-        f"{symbol} using ONLY the data above. Every numeric claim "
-        "must cite the corresponding Fact ID. Do not invent or "
-        "estimate any values not present above. End the report with: "
+        f"{symbol} using ONLY the data above. Every line that contains a "
+        "number must cite, on that same line, the Fact ID(s) the number "
+        "comes from, and the number must be copied exactly as shown above "
+        "(you may round it, but do not convert units). Do not compute "
+        "growth rates, differences, averages or counts, and do not invent "
+        "or estimate any value not present above — an automated check "
+        "rejects any number that does not match a cited fact. Do not "
+        "number your headings. End the report with: "
         "'**Disclaimer**: This report is not investment advice. It "
         "describes validated signals and historical data; it does not "
         "tell you what to buy or sell.'"
@@ -251,55 +257,189 @@ def check_citations(
         'resolved': int
         'unresolved': list[str] — fact_ids that failed to resolve.
     """
-    # Look for patterns like [fact_id: abc12345…] or (fact_id: abc12345…)
-    # Also catch bare 8+ hex-char IDs that look like fact_id prefixes
-    id_pattern = re.compile(r"fact_id[:\s]+([a-f0-9]{8,})")
-    found_ids = id_pattern.findall(report_text)
-
-    # A citation somewhere in a report is not enough: every line containing a
-    # numeric claim must carry a citation.  This is intentionally conservative;
-    # the writer prompt can always add a citation when a line is ambiguous.
-    citation_pattern = re.compile(r"fact_id[:\s]+[a-f0-9]{8,}", re.IGNORECASE)
-    numeric_pattern = re.compile(r"(?<![A-Za-z])[₹$€£]?\d+(?:[,.]\d+)*(?:%|[A-Za-z]{1,6})?")
-    uncited_numeric_claims = []
-    for line in report_text.splitlines():
-        without_citation = citation_pattern.sub("", line)
-        if numeric_pattern.search(without_citation) and not citation_pattern.search(line):
-            uncited_numeric_claims.append(line.strip())
-
-    # De-duplicate
-    unique_ids = list(set(found_ids))
-
-    resolved = []
-    unresolved = []
-
-    # Get all facts for this job to check against
+    report_text = _ascii_fold(report_text)
     all_facts = store.get_job_facts(job_id)
     fact_id_map = {f.fact_id: f for f in all_facts}
 
-    for ref_id in unique_ids:
-        # Match against full IDs (the report might use truncated 8-char prefixes)
-        matched = False
+    def resolve(ref_id: str) -> Optional[BaseFact]:
+        # Reports may cite truncated 8-char prefixes of the full id.
+        ref_id = ref_id.lower()
         for full_id, fact in fact_id_map.items():
-            if full_id.startswith(ref_id):
-                if fact.source:  # source must be non-empty
-                    resolved.append(ref_id)
-                    matched = True
-                    break
-        if not matched:
-            unresolved.append(ref_id)
+            if full_id.startswith(ref_id) and fact.source:
+                return fact
+        return None
+
+    unique_ids = list(dict.fromkeys(ref.lower() for ref in _CITATION_ID_RE.findall(report_text)))
+    resolved = [ref for ref in unique_ids if resolve(ref) is not None]
+    unresolved = [ref for ref in unique_ids if resolve(ref) is None]
+
+    # A citation somewhere in a report is not enough:
+    #   (a) every line containing a numeric claim must carry a citation, and
+    #   (b) every number on that line must equal a value held by one of the
+    #       facts cited on the same line (to its displayed precision).
+    # (b) is what stops "Revenue grew 9999% [fact_id: <real id>]": the id
+    # resolves, but 9999 is not in that fact.  Numbers derived by the LLM
+    # (growth rates, differences, counts) are rejected by design — rule 1.
+    uncited_numeric_claims: list[str] = []
+    unsupported_numeric_claims: list[dict] = []
+    for line in report_text.splitlines():
+        line_ids = _CITATION_ID_RE.findall(line)
+        numbers = _claim_numbers(line)
+        if not numbers:
+            continue
+        if not line_ids:
+            uncited_numeric_claims.append(line.strip())
+            continue
+        candidates: list[float] = []
+        for ref in line_ids:
+            fact = resolve(ref)
+            if fact is not None:
+                candidates.extend(_fact_numeric_values(fact))
+        unmatched = [
+            token for token, value, decimals in numbers
+            if not any(_number_matches(value, decimals, c) for c in candidates)
+        ]
+        if unmatched:
+            unsupported_numeric_claims.append({"line": line.strip(), "numbers": unmatched})
 
     return {
         "valid": (
             len(unresolved) == 0
             and len(resolved) > 0
             and len(uncited_numeric_claims) == 0
+            and len(unsupported_numeric_claims) == 0
         ),
         "total_citations": len(unique_ids),
         "resolved": len(resolved),
         "unresolved": unresolved,
         "uncited_numeric_claims": uncited_numeric_claims,
+        "unsupported_numeric_claims": unsupported_numeric_claims,
     }
+
+
+# ── Numeric-claim helpers for the citation gate ─────────────────────────────────
+
+# Accept the spellings LLMs actually produce when copying the context table
+# ("fact_id: ab12…", "Fact ID ab12…", "fact-id #ab12…").  The *numbers* on the
+# line are still verified against the resolved fact, so a looser id syntax
+# does not loosen the gate.
+_CITATION_KEY = r"fact[\s_-]?id"
+# One key may introduce several ids: "[Fact IDs: ab12cd34…; ef56ab78…]".
+_CITATION_GROUP_RE = re.compile(
+    _CITATION_KEY + r"s?[:\s#]*"
+    r"([a-f0-9]{8,}…?(?:\s*(?:[;,/&]|and)\s*#?[a-f0-9]{8,}…?)*)",
+    re.IGNORECASE,
+)
+_HEX_ID_RE = re.compile(r"[a-f0-9]{8,}", re.IGNORECASE)
+
+
+class _CitationIds:
+    """`findall`-compatible extractor that expands multi-id citation groups."""
+
+    @staticmethod
+    def findall(text: str) -> list[str]:
+        ids: list[str] = []
+        for group in _CITATION_GROUP_RE.findall(text):
+            ids.extend(_HEX_ID_RE.findall(group))
+        return ids
+
+
+_CITATION_ID_RE = _CitationIds()
+# Whole citation markup, including any "source: NSE_X_2025" text inside the
+# brackets, so provenance strings are never mistaken for claims.
+_CITATION_SPAN_RES = (
+    re.compile(r"\[[^\]\n]*" + _CITATION_KEY + r"[^\]\n]*\]", re.IGNORECASE),
+    re.compile(r"\([^)\n]*" + _CITATION_KEY + r"[^)\n]*\)", re.IGNORECASE),
+    _CITATION_GROUP_RE,
+)
+# Markdown ordered-list / numbered-heading markers are structure, not claims.
+_LIST_MARKER_RE = re.compile(r"^\s*(?:#{1,6}\s*)?(?:[-*+]\s+)?\d+[.)]\s+")
+# A number not glued to a preceding letter/digit/underscore, so labels such as
+# FY2025, Q2, H1, return_12m are not treated as claims.  Commas are accepted
+# in both Western (250,000) and Indian (2,50,000) grouping.
+_NUMBER_RE = re.compile(r"(?<![A-Za-z0-9_])\d+(?:,\d+)*(?:\.\d+)?")
+# Lookback-window names ("52-week high", "200-day average", "12-month return")
+# are metric labels, not asserted values.
+# Fiscal-year labels and ranges ("FY 2025", "FY2023-2026", "FY24–FY26") name
+# the period a fact belongs to; they are not values.
+_FY_LABEL_RE = re.compile(
+    r"\bFY\s?'?\d{2,4}(?:\s?[-/]\s?(?:FY\s?'?)?\d{2,4})?", re.IGNORECASE
+)
+_PERIOD_LABEL_RE = re.compile(r"(?<![A-Za-z0-9_.,])\d+[- ](?:week|day|month|year)s?\b", re.IGNORECASE)
+_NON_NUMERIC_FACT_TYPES = {FactType.NARRATIVE, FactType.REPORT_CITATION}
+_EXCLUDED_FACT_FIELDS = {"fact_id", "job_id", "created_at", "fact_type"}
+
+
+# LLMs emit typographic characters (U+2011 non-breaking hyphen, U+2212 minus,
+# U+202F narrow no-break space, …); fold them to ASCII before parsing so
+# "52‑week" and "‑24.98 %" are read the same as their ASCII spellings.
+_TYPOGRAPHIC = str.maketrans({
+    **{c: "-" for c in "\u2010\u2011\u2012\u2013\u2014\u2015\u2212\ufe63\uff0d"},
+    **{c: " " for c in "\u00a0\u2007\u2009\u200a\u202f\u205f\u3000"},
+    "\u2009": " ",
+})
+
+
+def _ascii_fold(text: str) -> str:
+    return text.translate(_TYPOGRAPHIC)
+
+
+def _parse_numbers(text: str) -> list[tuple[str, float, int]]:
+    """Return (token, absolute value, decimal places) for numbers in text."""
+    out = []
+    for match in _NUMBER_RE.finditer(text):
+        token = match.group(0)
+        plain = token.replace(",", "")
+        decimals = len(plain.split(".", 1)[1]) if "." in plain else 0
+        out.append((token, abs(float(plain)), decimals))
+    return out
+
+
+def _claim_numbers(line: str) -> list[tuple[str, float, int]]:
+    """Numbers on a report line that count as claims."""
+    stripped = line
+    for pattern in _CITATION_SPAN_RES:
+        stripped = pattern.sub(" ", stripped)
+    stripped = _LIST_MARKER_RE.sub("", stripped)
+    stripped = _PERIOD_LABEL_RE.sub(" ", stripped)
+    stripped = _FY_LABEL_RE.sub(" ", stripped)
+    return _parse_numbers(stripped)
+
+
+def _fact_numeric_values(fact: BaseFact) -> list[float]:
+    """
+    Every number a fact can legitimately support: numeric fields, date parts,
+    and numbers embedded in its string fields (e.g. RiskFlag.detail, news
+    headlines).  Narrative and citation facts contribute nothing — their
+    numbers were written by an LLM, and citing them must not launder a claim.
+    """
+    if fact.fact_type in _NON_NUMERIC_FACT_TYPES:
+        return []
+    values: list[float] = []
+
+    def walk(obj: Any) -> None:
+        if isinstance(obj, bool) or obj is None:
+            return
+        if isinstance(obj, (int, float)):
+            if math.isfinite(obj):
+                values.append(abs(float(obj)))
+        elif isinstance(obj, str):
+            values.extend(v for _, v, _ in _parse_numbers(obj))
+        elif isinstance(obj, dict):
+            for item in obj.values():
+                walk(item)
+        elif isinstance(obj, (list, tuple)):
+            for item in obj:
+                walk(item)
+
+    walk(fact.model_dump(mode="json", exclude=_EXCLUDED_FACT_FIELDS))
+    return values
+
+
+def _number_matches(value: float, decimals: int, candidate: float) -> bool:
+    """True if `value` is `candidate` rounded to `decimals` places."""
+    tolerance = 0.5 * 10 ** (-decimals) + 1e-9 * max(1.0, candidate)
+    return abs(value - candidate) <= tolerance
 
 
 def persist_report_citations(
@@ -312,13 +452,13 @@ def persist_report_citations(
     all_facts = store.get_job_facts(job_id)
     fact_id_map = {fact.fact_id: fact for fact in all_facts}
     citations: list[ReportCitation] = []
-    for ref_id in re.findall(r"fact_id[:\s]+([a-f0-9]{8,})", report_text):
+    for ref_id in (ref.lower() for ref in _CITATION_ID_RE.findall(report_text)):
         matched_id = next(
             (full_id for full_id in fact_id_map if full_id.startswith(ref_id)),
             ref_id,
         )
         claim = next(
-            (line.strip() for line in report_text.splitlines() if ref_id in line),
+            (line.strip() for line in report_text.splitlines() if ref_id in line.lower()),
             ref_id,
         )
         citations.append(ReportCitation(

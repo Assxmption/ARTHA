@@ -57,6 +57,11 @@ class PairBacktestResult:
     max_drawdown: float
     avg_holding_days: float
     daily_returns: pd.Series
+    # Position held *after* each session's close (+1 long A/short B, -1
+    # short A/long B, 0 flat) and the hedge ratio fixed at entry; lets a
+    # replay know exactly what was open going into the next session.
+    positions: Optional[pd.Series] = None
+    entry_hedge: Optional[pd.Series] = None
 
 
 def backtest_pair(
@@ -132,6 +137,8 @@ def backtest_pair(
 
     # Daily P&L tracking
     daily_pnl = pd.Series(0.0, index=dates)
+    positions = pd.Series(0, index=dates, dtype=int)
+    entry_hedges = pd.Series(np.nan, index=dates, dtype=float)
 
     for i, sig in enumerate(signals):
         if i == 0:
@@ -190,6 +197,10 @@ def backtest_pair(
                 entry_hedge_ratio = float(hedge_ratios[i])
                 daily_pnl.iloc[i] -= TOTAL_COST_BPS / 10000 / 2
 
+        positions.iloc[i] = position
+        if position != 0:
+            entry_hedges.iloc[i] = entry_hedge_ratio
+
     # Force-close an open position at the final available observation so the
     # daily equity curve and trade accounting use the same realized horizon.
     if position != 0 and len(signals) > 1:
@@ -220,6 +231,8 @@ def backtest_pair(
         max_drawdown=metrics.max_drawdown,
         avg_holding_days=round(avg_hold, 1),
         daily_returns=daily_pnl,
+        positions=positions,
+        entry_hedge=entry_hedges,
     )
 
 

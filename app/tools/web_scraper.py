@@ -54,12 +54,20 @@ class WebScraperTool(BaseTool):
             if not url.startswith(("http://", "https://")):
                 url = "https://" + url
 
-            with httpx.Client(
-                timeout=30,
-                headers=self.HEADERS,
-                follow_redirects=True,
-            ) as client:
-                response = client.get(url)
+            from app.security.net import is_public_http_url
+
+            # SSRF guard: every hop (including redirects) must be a public http(s) host.
+            with httpx.Client(timeout=30, headers=self.HEADERS, follow_redirects=False) as client:
+                for _ in range(5):
+                    if not is_public_http_url(url):
+                        return f"Scraping failed for {url}: only public http(s) addresses can be fetched."
+                    response = client.get(url)
+                    if response.is_redirect and response.headers.get("location"):
+                        url = str(response.url.join(response.headers["location"]))
+                        continue
+                    break
+                else:
+                    return f"Scraping failed: too many redirects."
                 response.raise_for_status()
 
             content_type = response.headers.get("content-type", "")

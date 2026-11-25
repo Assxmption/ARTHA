@@ -211,6 +211,12 @@ def vol_target_returns(
     # Cap at 3× leverage and floor at 0.1× to prevent near-zero allocation
     scale = target_vol / rolling_vol.clip(lower=target_vol / 3, upper=target_vol * 10)
 
+    # The window ending at t includes r_t, which is unknown when the day-t
+    # position is sized.  Lag by one session so day t is scaled with the
+    # estimate available at the previous close (otherwise large-move days are
+    # systematically de-levered after the fact, inflating Sharpe).
+    scale = scale.shift(1)
+
     # Apply scaling (NaN for warmup period)
     scaled = daily * scale
     return scaled.dropna()
