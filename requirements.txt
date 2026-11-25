@@ -53,4 +53,4 @@ openai>=1.30.0
 beautifulsoup4>=4.12.3
 lxml>=5.2.0
 cachetools==5.3.3
-python-jose==3.3.0
+python-jose==3.5.0
