@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { getActiveSymbol, useRememberSymbol } from '../lib/activeSymbol';
 import { Newspaper, TrendingUp, TrendingDown, Minus, ExternalLink, RefreshCw, ArrowLeft } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 
 const SENTIMENT_COLORS = {
   bullish: { bg: 'bg-secondary/15', text: 'text-secondary', border: 'border-secondary/30', icon: TrendingUp },
@@ -9,7 +11,9 @@ const SENTIMENT_COLORS = {
 };
 
 export default function NewsSentiment() {
-  const { symbol = 'RELIANCE' } = useParams();
+  const { symbol: routeSymbol } = useParams();
+  const symbol = routeSymbol || getActiveSymbol();
+  useRememberSymbol(symbol);
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -19,7 +23,7 @@ export default function NewsSentiment() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/news/${symbol}`);
+      const res = await apiFetch(`/api/news/${symbol}`);
       if (!res.ok) throw new Error('Failed to fetch news');
       const json = await res.json();
       setData(json);

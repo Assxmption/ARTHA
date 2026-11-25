@@ -22,6 +22,7 @@ import time
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
+from app.data.nse import _yfinance_symbol
 
 logger = logging.getLogger("artha.api.company")
 router = APIRouter(tags=["Company"])
@@ -62,7 +63,7 @@ async def get_company_view(symbol: str, days: int = 180):
     import numpy as np
     
     try:
-        ticker = yf.Ticker(f"{symbol}.NS")
+        ticker = yf.Ticker(_yfinance_symbol(symbol))
         info = ticker.info or {}
         
         # Basic info
@@ -204,7 +205,7 @@ async def get_company_quick(symbol: str):
     import yfinance as yf
     
     try:
-        ticker = yf.Ticker(f"{symbol}.NS")
+        ticker = yf.Ticker(_yfinance_symbol(symbol))
         info = ticker.info or {}
         hist = ticker.history(period="2d")
         
@@ -228,7 +229,8 @@ async def get_company_quick(symbol: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, str(e))
+        logger.warning("company quick %s failed: %s", symbol, type(e).__name__)
+        raise HTTPException(500, "Could not load company data right now")
 
 
 # ── News Endpoints ─────────────────────────────────────────────────────────────
@@ -274,90 +276,65 @@ async def get_news_sentiment_summary(symbol: str):
 # ── Multi-company batch endpoint ───────────────────────────────────────────────
 
 @router.get("/api/search")
-async def search_symbols(q: str):
+async def search_symbols(q: str = "", limit: int = 8):
     """
-    Search for stock symbols using Yahoo Finance search API.
-    Filters for NSE and BSE stocks.
+    Ranked instrument search: ARTHA's security master (including former
+    tickers such as ZOMATO → ETERNAL) plus Kite's NSE instrument master,
+    searched locally. Yahoo's search API is only consulted when nothing local
+    matches.
     """
-    if not q or len(q) < 1:
-        return {"results": []}
-        
-    import httpx
-    
-    url = f"https://query2.finance.yahoo.com/v1/finance/search?q={q}&quotesCount=10&newsCount=0"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    
+    from starlette.concurrency import run_in_threadpool
+
+    from app.data.symbols import instrument_index
+
+    q = (q or "").strip()[:40]
+    limit = max(1, min(limit, 20))
+    if not q:
+        return {"results": [], "source": None}
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-            
-            quotes = data.get("quotes", [])
-            # Filter for Indian exchanges (NSI for NSE, BSE for Bombay Stock Exchange)
-            indian_stocks = [
-                {
-                    "symbol": q.get("symbol", "").replace(".NS", "").replace(".BO", ""),
-                    "name": q.get("shortname") or q.get("longname", ""),
-                    "exchange": "NSE" if q.get("exchange") == "NSI" else "BSE",
-                    "type": q.get("quoteType", "EQUITY"),
-                }
-                for q in quotes
-                if q.get("exchange") in ["NSI", "BSE"] and q.get("quoteType") in ["EQUITY", "ETF", "MUTUALFUND"]
-            ]
-            
-            # Deduplicate by symbol (prefer NSE over BSE)
-            seen = set()
-            deduped = []
-            
-            # Local fallback for 1-2 letter searches (Yahoo global search favors US stocks)
-            LOCAL_TOP_STOCKS = [
-                {"symbol": "RELIANCE", "name": "Reliance Industries", "exchange": "NSE", "type": "EQUITY"},
-                {"symbol": "TCS", "name": "Tata Consultancy Services", "exchange": "NSE", "type": "EQUITY"},
-                {"symbol": "HDFCBANK", "name": "HDFC Bank", "exchange": "NSE", "type": "EQUITY"},
-                {"symbol": "INFY", "name": "Infosys", "exchange": "NSE", "type": "EQUITY"},
-                {"symbol": "ICICIBANK", "name": "ICICI Bank", "exchange": "NSE", "type": "EQUITY"},
-                {"symbol": "SBIN", "name": "State Bank of India", "exchange": "NSE", "type": "EQUITY"},
-                {"symbol": "BHARTIARTL", "name": "Bharti Airtel", "exchange": "NSE", "type": "EQUITY"},
-                {"symbol": "ITC", "name": "ITC Limited", "exchange": "NSE", "type": "EQUITY"},
-                {"symbol": "MASTEK", "name": "Mastek Limited", "exchange": "NSE", "type": "EQUITY"},
-                {"symbol": "TATAMOTORS", "name": "Tata Motors", "exchange": "NSE", "type": "EQUITY"}
-            ]
-            
-            q_lower = q.lower()
-            for stock in LOCAL_TOP_STOCKS:
-                if q_lower in stock["symbol"].lower() or q_lower in stock["name"].lower():
-                    seen.add(stock["symbol"])
-                    deduped.append(stock)
-            
-            for stock in indian_stocks:
-                if stock["symbol"] not in seen:
-                    seen.add(stock["symbol"])
-                    deduped.append(stock)
-            
-            # Simple heuristic scoring for better ranking
-            def score_stock(s):
-                sym = s["symbol"].lower()
-                name = s["name"].lower()
-                
-                if sym == q_lower: return 100
-                if sym.startswith(q_lower): return 80
-                if name.startswith(q_lower): return 60
-                
-                # Check if any word in the name starts with the query
-                words = name.split()
-                if any(w.startswith(q_lower) for w in words): return 40
-                
-                if q_lower in sym: return 10
-                if q_lower in name: return 5
-                return 0
-                
-            deduped.sort(key=score_stock, reverse=True)
-            
-            return {"results": deduped[:8]}
+        results = await run_in_threadpool(instrument_index.search, q, limit)
     except Exception as e:
-        logger.error("Search failed for %s: %s", q, e)
-        return {"results": []}
+        logger.warning("Local instrument search failed for %r: %s", q, e)
+        results = []
+    if results:
+        return {"results": results, "source": "+".join(instrument_index.sources)}
+    if len(q) < 2:
+        return {"results": [], "source": "local"}
+    return {"results": await _yahoo_search(q, limit), "source": "yahoo"}
+
+
+async def _yahoo_search(q: str, limit: int) -> list[dict]:
+    """Fallback: Yahoo search filtered to NSE/BSE listings."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            response = await client.get(
+                "https://query2.finance.yahoo.com/v1/finance/search",
+                params={"q": q, "quotesCount": 10, "newsCount": 0},
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            response.raise_for_status()
+            quotes = response.json().get("quotes", [])
+    except Exception as e:
+        logger.error("Yahoo search failed for %s: %s", q, e)
+        return []
+    seen, out = set(), []
+    for item in quotes:
+        if item.get("exchange") not in ("NSI", "BSE") or item.get("quoteType") not in ("EQUITY", "ETF"):
+            continue
+        sym = item.get("symbol", "").replace(".NS", "").replace(".BO", "")
+        if not sym or sym in seen:
+            continue
+        seen.add(sym)
+        out.append({
+            "symbol": sym,
+            "name": item.get("shortname") or item.get("longname") or sym,
+            "exchange": "NSE" if item.get("exchange") == "NSI" else "BSE",
+            "type": "EQ" if item.get("quoteType") == "EQUITY" else item.get("quoteType"),
+            "in_universe": False,
+        })
+    return out[:limit]
 
 
 # ── Multi-company batch endpoint ───────────────────────────────────────────────
@@ -387,7 +364,7 @@ def get_watchlist(
         
         try:
             # Use symbol as-is if it starts with ^ (indices) or already has an extension
-            yf_sym = sym if sym.startswith("^") or "." in sym else f"{sym}.NS"
+            yf_sym = sym if sym.startswith("^") or "." in sym else _yfinance_symbol(sym)
             ticker = yf.Ticker(yf_sym)
             hist = ticker.history(period="5d").dropna(subset=["Close"])
             

@@ -26,7 +26,9 @@ from dataclasses import asdict
 from datetime import date, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+
+from app.security.auth import require_user
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("artha.api.simulator")
@@ -41,19 +43,21 @@ _sim_lock = threading.Lock()
 # ── Request/Response Models ─────────────────────────────────────────────────
 
 class SimStartRequest(BaseModel):
-    capital: float = Field(default=15_00_000.0, description="Starting capital in INR")
-    days: int = Field(default=365, description="Number of historical days to replay")
+    capital: float = Field(default=15_00_000.0, gt=0, le=1e12, description="Starting capital in INR")
+    days: int = Field(default=365, ge=30, le=3650, description="Number of historical days to replay")
     symbols: list[str] = Field(
         default=[
             "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK",
             "HINDUNILVR", "ITC", "SBIN", "BHARTIARTL", "KOTAKBANK",
             "LT", "HCLTECH", "AXISBANK", "ASIANPAINT", "MARUTI",
             "SUNPHARMA", "TITAN", "ULTRACEMCO", "BAJFINANCE", "WIPRO",
-            "NESTLEIND", "TATAMOTORS", "POWERGRID", "NTPC", "ADANIENT",
+            "NESTLEIND", "TMPV", "POWERGRID", "NTPC", "ADANIENT",
         ],
-        description="NSE symbols to trade"
+        description="NSE symbols to trade",
+        min_length=1,
+        max_length=60,
     )
-    strategy_type: str = Field(default="EQUITY_LONG_ONLY", description="Strategy to run")
+    strategy_type: str = Field(default="EQUITY_LONG_ONLY", max_length=40, description="Strategy to run")
 
 
 # ── Background simulation runner ────────────────────────────────────────────
@@ -150,7 +154,7 @@ def _run_simulation(sim_id: str, capital: float, days: int, symbols: list[str], 
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                cwd="/Users/goral/Documents/multi_agent_stock_analyzer"
+                cwd=str(Path(__file__).resolve().parents[2])
             )
             
             for line in iter(process.stdout.readline, ''):
@@ -243,7 +247,7 @@ def _run_simulation(sim_id: str, capital: float, days: int, symbols: list[str], 
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                cwd="/Users/goral/Documents/multi_agent_stock_analyzer"
+                cwd=str(Path(__file__).resolve().parents[2])
             )
             
             for line in iter(process.stdout.readline, ''):
@@ -339,17 +343,29 @@ def _run_simulation(sim_id: str, capital: float, days: int, symbols: list[str], 
         logger.error("Simulation %s failed: %s", sim_id, e, exc_info=True)
         with _sim_lock:
             _simulations[sim_id]["status"] = "error"
-            _simulations[sim_id]["error"] = str(e)
+            _simulations[sim_id]["error"] = f"{type(e).__name__}: simulation failed (details in server logs)"
 
 
 # ── API Endpoints ───────────────────────────────────────────────────────────
 
 @router.post("/start")
-async def start_simulation(req: SimStartRequest, bg: BackgroundTasks):
-    """Start a new trading simulation."""
+async def start_simulation(req: SimStartRequest, bg: BackgroundTasks, user=Depends(require_user)):
+    """Start a new trading simulation (signed-in users; one running at a time)."""
+    import re as _re
+
+    bad = [s for s in req.symbols if not _re.fullmatch(r"[A-Z0-9&\-]{1,20}", s.upper())]
+    if bad:
+        raise HTTPException(400, f"Invalid symbol(s): {', '.join(bad[:5])[:100]}")
+    req.symbols = [s.upper() for s in req.symbols]
     sim_id = f"sim_{uuid.uuid4().hex[:8]}"
-    
+
     with _sim_lock:
+        if any(v.get("status") in ("pending", "running") and time.time() - v.get("started_at", 0) < 1800
+               for v in _simulations.values()):
+            raise HTTPException(429, "A simulation is already running; try again when it finishes")
+        if len(_simulations) >= 200:      # bounded history: forget the oldest
+            for old in sorted(_simulations, key=lambda k: _simulations[k].get("started_at", 0))[:50]:
+                _simulations.pop(old, None)
         _simulations[sim_id] = {
             "sim_id": sim_id,
             "status": "pending",

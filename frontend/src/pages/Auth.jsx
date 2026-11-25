@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, ArrowLeft } from 'lucide-react';
+import { getPreferences } from '../lib/preferences';
 
 export default function Auth() {
   const { signIn, signUp, verifyOtp, resetPassword } = useAuth();
@@ -26,7 +27,7 @@ export default function Auth() {
       if (mode === 'login') {
         const { error } = await signIn(email, password);
         if (error) throw error;
-        navigate('/dashboard/overview');
+        navigate(getPreferences().landingPage);
       } 
       else if (mode === 'signup') {
         // Password Validation
@@ -48,7 +49,7 @@ export default function Auth() {
       else if (mode === 'otp') {
         const { error } = await verifyOtp(email, otp, 'signup');
         if (error) throw error;
-        navigate('/dashboard/overview');
+        navigate(getPreferences().landingPage);
       }
       else if (mode === 'forgot') {
         const { error } = await resetPassword(email);

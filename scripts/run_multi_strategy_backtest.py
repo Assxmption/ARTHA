@@ -17,7 +17,9 @@ Advanced Pricing (Heston + Merton):
   - Used for options strategy sleeve (separate from equity strategies)
   - Vol surface construction for more accurate entry/exit pricing
 
-Target: Combined Sharpe > 1.3 via √N diversification.
+There is no fixed return target. Sharpe above 1.3 is a stretch comparison
+objective only; every sleeve and portfolio must pass the canonical out-of-sample
+validation contract before it can be treated as evidence.
 
 All computation is deterministic (AGENTS.md rule 1).
 Reference: docs/ARTHA_ARCHITECTURE.md §4.3, §6.3

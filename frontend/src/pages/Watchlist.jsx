@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Eye, TrendingUp, TrendingDown, RefreshCw, Plus, Trash2, Edit2, Search, X, Check, List, MoreVertical } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { apiFetch } from '../lib/api';
 
 export default function Watchlist() {
   const navigate = useNavigate();
@@ -46,7 +47,7 @@ export default function Watchlist() {
           .from('watchlists')
           .insert([
             { user_id: user.id, name: 'Nifty 50 Core', symbols: ['^NSEI', 'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ICICIBANK', 'SBIN', 'BHARTIARTL'] },
-            { user_id: user.id, name: 'Auto Sector', symbols: ['^CNXAUTO', 'TATAMOTORS', 'M&M', 'MARUTI', 'BAJAJ-AUTO', 'HEROMOTOCO'] },
+            { user_id: user.id, name: 'Auto Sector', symbols: ['^CNXAUTO', 'TMPV', 'TMCV', 'M&M', 'MARUTI', 'BAJAJ-AUTO', 'HEROMOTOCO'] },
             { user_id: user.id, name: 'IT Sector', symbols: ['^CNXIT', 'TCS', 'INFY', 'HCLTECH', 'WIPRO', 'TECHM'] }
           ])
           .select();
@@ -74,7 +75,7 @@ export default function Watchlist() {
     if (!isBackground) setError(null);
     try {
       const symbolString = encodeURIComponent(activeList.symbols.join(','));
-      const res = await fetch(`/api/watchlist?symbols=${symbolString}`);
+      const res = await apiFetch(`/api/watchlist?symbols=${symbolString}`);
       if (!res.ok) throw new Error('Failed to fetch watchlist');
       
       const contentType = res.headers.get("content-type");

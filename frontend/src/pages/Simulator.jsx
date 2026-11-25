@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart2, Play, Loader2, TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 
 export default function Simulator() {
   const navigate = useNavigate();
@@ -15,7 +16,7 @@ export default function Simulator() {
 
   // Load existing simulations
   useEffect(() => {
-    fetch('/api/sim/list')
+    apiFetch('/api/sim/list')
       .then(r => r.json())
       .then(data => setSimulations(data.simulations || []))
       .catch(() => {});
@@ -24,7 +25,7 @@ export default function Simulator() {
   const startSimulation = async () => {
     setStarting(true);
     try {
-      const res = await fetch('/api/sim/start', {
+      const res = await apiFetch('/api/sim/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ capital, days, strategy_type: strategyType }),
@@ -43,7 +44,7 @@ export default function Simulator() {
     setLoading(true);
     const poll = async () => {
       try {
-        const res = await fetch(`/api/sim/${simId}/status`);
+        const res = await apiFetch(`/api/sim/${simId}/status`);
         const data = await res.json();
         setActiveSim(data);
         if (data.status === 'completed' || data.status === 'failed') {
@@ -51,7 +52,7 @@ export default function Simulator() {
           setLoading(false);
           setStarting(false);
           // Refresh list
-          fetch('/api/sim/list').then(r => r.json()).then(d => setSimulations(d.simulations || []));
+          apiFetch('/api/sim/list').then(r => r.json()).then(d => setSimulations(d.simulations || []));
         }
       } catch (err) {
         clearInterval(pollingRef.current);
@@ -64,7 +65,7 @@ export default function Simulator() {
   };
 
   const loadSim = (simId) => {
-    fetch(`/api/sim/${simId}/status`).then(r => r.json()).then(setActiveSim);
+    apiFetch(`/api/sim/${simId}/status`).then(r => r.json()).then(setActiveSim);
   };
 
   useEffect(() => () => clearInterval(pollingRef.current), []);

@@ -96,6 +96,16 @@ class TestRegimeDetectorPrediction:
         assert len(regimes) == len(prices)
         assert regimes.index.equals(prices.index)
 
+    def test_causal_predictions_do_not_change_when_future_data_is_appended(self):
+        """Historical labels must not depend on observations after the cutoff."""
+        prices = _make_synthetic_prices(n=500, seed=11)
+        detector = RegimeDetector()
+        assert detector.fit(prices.iloc[:350]) is True
+
+        before = detector.predict(prices.iloc[:350], min_regime_days=1)
+        after = detector.predict(prices, min_regime_days=1).iloc[:350]
+        pd.testing.assert_series_equal(before, after)
+
     def test_three_states_present(self):
         """
         With regime-switching data, all three states should appear.
@@ -196,3 +206,11 @@ class TestConvenienceFunction:
         test = _make_synthetic_prices(n=200, seed=2)
         regimes = detect_regime(test, training_prices=train)
         assert len(regimes) == len(test)
+
+    def test_detect_regime_without_training_is_causal(self):
+        prices = _make_synthetic_prices(n=320, seed=7)
+        regimes = detect_regime(
+            prices, min_training_observations=120, refit_every=60,
+        )
+        assert regimes.iloc[:120].eq(RegimeState.UNKNOWN).all()
+        assert len(regimes) == len(prices)

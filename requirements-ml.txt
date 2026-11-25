@@ -1,0 +1,6 @@
+# Optional local sentiment model support for ARTHA.
+# The application falls back to VADER when these packages or the model weights
+# are unavailable; production deployments that require FinBERT should install
+# this file explicitly and pre-cache ProsusAI/finbert.
+transformers>=4.40.0
+torch>=2.2.0

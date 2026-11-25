@@ -236,9 +236,9 @@ class TestWalkForward:
     def test_walk_forward_produces_results(self):
         returns = _make_returns(n=600)
 
-        def dummy_signal_gen(train_data: pd.Series) -> pd.Series:
+        def dummy_signal_gen(train_data: pd.Series, oos_index) -> pd.Series:
             """Always-long strategy for testing."""
-            return pd.Series(1.0, index=train_data.index)
+            return pd.Series(1.0, index=oos_index)
 
         result = walk_forward_backtest(
             returns, dummy_signal_gen, "test_strategy", n_folds=3,
@@ -250,11 +250,37 @@ class TestWalkForward:
     def test_walk_forward_insufficient_data(self):
         returns = _make_returns(n=50)
 
-        def dummy_signal_gen(train_data):
-            return pd.Series(1.0, index=train_data.index)
+        def dummy_signal_gen(train_data, oos_index):
+            return pd.Series(1.0, index=oos_index)
 
         result = walk_forward_backtest(returns, dummy_signal_gen)
         assert result.out_of_sample_metrics.num_trading_days == 0
+
+    def test_walk_forward_rejects_in_sample_only_signals(self):
+        returns = _make_returns(n=600)
+
+        def is_only_signal(train_data):
+            return pd.Series(1.0, index=train_data.index)
+
+        result = walk_forward_backtest(
+            returns, is_only_signal, "strict_index", n_folds=3,
+        )
+        assert result.failed_folds
+        assert result.is_validated is False
+
+    def test_walk_forward_accounts_for_remainder_and_records_boundaries(self):
+        returns = _make_returns(n=607)
+
+        def signal_gen(train_data, oos_index):
+            return pd.Series(1.0, index=oos_index)
+
+        result = walk_forward_backtest(
+            returns, signal_gen, "coverage", n_folds=4,
+        )
+        assert result.expected_oos_days == 607 - int(607 * 0.6)
+        assert result.out_of_sample_metrics.num_trading_days == result.expected_oos_days
+        assert len(result.fold_boundaries) == 4
+        assert not result.failed_folds
 
     def test_walk_forward_validation(self):
         """WalkForwardResult.validate() should delegate to OOS metrics."""

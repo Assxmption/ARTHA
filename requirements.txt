@@ -4,10 +4,9 @@
 
 # Core AI Framework
 crewai>=0.80.0
-crewai-tools>=0.15.0
 
 # LLM Providers & Routing
-litellm>=1.89.3
+litellm>=1.100.4
 langchain-groq>=0.1.9
 langchain-google-genai>=1.0.10
 langchain-openai>=0.1.0
@@ -21,8 +20,10 @@ sse-starlette>=2.1.0
 
 # ── Indian Market Data ─────────────────────────────────────────────────────
 jugaad-data>=0.26            # NSE/RBI historical data (primary)
+nselib>=2.5                  # NSE F&O option chains (app/data/nse_fno.py)
 yfinance>=0.2.40             # Fallback for NSE via .NS suffix
 httpx>=0.27.0                # HTTP client for API calls
+requests>=2.31.0             # MCX/NSE RSS and bhavcopy HTTP transport
 
 # ── Quantitative Engine ───────────────────────────────────────────────────
 numpy>=1.26.0
@@ -33,10 +34,13 @@ scipy>=1.12.0                # Optimization, Student-t distributions
 pyarrow>=16.0.0              # Parquet file I/O for data caching
 scikit-learn>=1.4.0          # ML: Ridge, RandomForest, HistGBR, Ledoit-Wolf
 pykalman>=0.9.7              # Kalman filter for signal smoothing
+psycopg2-binary>=2.9.9       # Postgres/Supabase Fact Store backend
 
 # ── NLP / Sentiment (Phase 4, but install early to avoid surprises) ───────
 # transformers>=4.40.0       # FinBERT — uncomment when Phase 4 starts
 # torch>=2.2.0               # PyTorch backend for transformers
+
+vaderSentiment>=3.3.2        # Lexicon sentiment fallback when FinBERT is absent (app/data/news.py)
 
 # ── Data & Config ─────────────────────────────────────────────────────────
 pydantic>=2.7.0
@@ -45,6 +49,7 @@ python-dotenv>=1.0.1
 # ── Utilities ─────────────────────────────────────────────────────────────
 markdown>=3.6
 aiofiles>=23.2.1
+pypdf>=6.21.4                # PDF text extraction (app/tools/file_reader.py)
 
 # ── Optional: OpenAI ─────────────────────────────────────────────────────
 openai>=1.30.0
@@ -52,5 +57,18 @@ openai>=1.30.0
 # ── Legacy (kept for backward compat, can be removed after Phase 1) ──────
 beautifulsoup4>=4.12.3
 lxml>=5.2.0
-cachetools==5.3.3
-python-jose==3.3.0
+cachetools>=5.3.3            # TTL caches (app/api/company_routes.py)
+
+# ── Auth ──────────────────────────────────────────────────────────────────
+PyJWT>=2.15.0                # Supabase JWT verification (app/auth, app/security/auth.py)
+
+# ── Report exports (paper-trading report: XLSX and PDF) ─────────────────────
+openpyxl>=3.1
+reportlab>=4.2,<5
+
+# ── Security floors for transitive dependencies (pip-audit, 2026-11-25) ───
+pillow>=13.0.0
+aiohttp>=3.14.4
+urllib3>=2.8.0
+cryptography>=50.0.0
+certifi>=2026.10.18

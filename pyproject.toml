@@ -4,3 +4,8 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 norecursedirs = ["app", ".venv", "data_cache", "frontend", "scripts", "docs"]
+markers = [
+    "slow: long-running test",
+    "live: hits real market-data feeds (opt-in: ARTHA_LIVE=1)",
+    "live_llm: calls real LLM providers (opt-in: ARTHA_LIVE=1 ARTHA_LIVE_LLM=1)",
+]

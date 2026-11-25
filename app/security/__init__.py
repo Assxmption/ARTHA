@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from pathlib import Path
 import os
 import re
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -33,6 +34,37 @@ logger = logging.getLogger(__name__)
 
 
 # ── Security Headers Middleware ─────────────────────────────────────────────────
+
+
+def _supabase_origin() -> str | None:
+    """Supabase project origin from the backend env or the frontend's .env."""
+    from urllib.parse import urlparse
+
+    url = os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL")
+    if not url:
+        env_file = Path(__file__).resolve().parents[2] / "frontend" / ".env"
+        try:
+            for line in env_file.read_text().splitlines():
+                if line.strip().startswith("VITE_SUPABASE_URL="):
+                    url = line.split("=", 1)[1].strip().strip("'\"")
+                    break
+        except OSError:
+            url = None
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        return None
+    return parsed.netloc
+
+
+def _supabase_connect_sources() -> str:
+    host = _supabase_origin()
+    if host:
+        return f"https://{host} wss://{host}"
+    # Unknown project: allow Supabase-hosted projects only, not arbitrary hosts.
+    return "https://*.supabase.co wss://*.supabase.co"
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """
@@ -51,14 +83,20 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
 
-        # Content Security Policy — strict default
+        # Content Security Policy — strict default.  The SPA authenticates
+        # directly against Supabase from the browser, so its origin (HTTPS +
+        # realtime WSS) must be allowed in connect-src; with 'self' alone every
+        # login request is blocked when the UI is served from this server.
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self'; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-            "font-src 'self' https://fonts.gstatic.com; "
-            "img-src 'self' data: https:; "
-            "connect-src 'self'; "
+            # 'unsafe-inline' styles: the Kite callback page uses inline style
+            # attributes; scripts stay 'self' only, which is what blocks XSS.
+            "style-src 'self' 'unsafe-inline'; "
+            "font-src 'self'; "
+            "img-src 'self' data:; "
+            f"connect-src 'self' {_supabase_connect_sources()}; "
+            "object-src 'none'; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
             "form-action 'self'"
@@ -71,20 +109,22 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
 
         # XSS protection (legacy browsers)
-        response.headers["X-XSS-Protection"] = "1; mode=block"
+        # The legacy XSS auditor is itself exploitable; modern guidance is to disable it (CSP does the job).
+        response.headers["X-XSS-Protection"] = "0"
 
         # HSTS — enforce HTTPS (1 year, include subdomains)
         response.headers["Strict-Transport-Security"] = (
-            "max-age=31536000; includeSubDomains; preload"
+            "max-age=31536000; includeSubDomains"
         )
 
         # Referrer policy — don't leak full URL
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
 
         # Permissions policy — disable dangerous features
         response.headers["Permissions-Policy"] = (
             "camera=(), microphone=(), geolocation=(), "
-            "payment=(), usb=(), magnetometer=()"
+            "payment=(), usb=(), magnetometer=(), interest-cohort=()"
         )
 
         # Hide server identity
@@ -102,27 +142,58 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
     Per-IP sliding-window rate limiter.
 
     Configurable via environment variables:
-      RATE_LIMIT_RPM=60       — requests per minute per IP
-      RATE_LIMIT_BURST=10     — max burst in a 1-second window
+      RATE_LIMIT_RPM          — requests per minute per IP (default 60 in
+                                production, 600 when APP_ENV=development)
+      RATE_LIMIT_BURST        — max burst in a 1-second window (10 / 40)
 
     Returns 429 Too Many Requests when exceeded.
     """
 
-    def __init__(self, app, rpm: int = 60, burst: int = 10):
+    # A single local user of the live dashboard (chart refetch per toggle,
+    # 2-second quote polling, React dev-mode double effects — all from
+    # 127.0.0.1 via the Vite proxy) exceeds 60 RPM on its own.  Development
+    # therefore gets a higher default; production keeps the strict one.
+    DEV_DEFAULTS = (600, 40)
+    PROD_DEFAULTS = (60, 10)
+
+    MAX_TRACKED_CLIENTS = 50_000     # hard cap on memory, whatever the traffic
+    SWEEP_EVERY_S = 30.0
+
+    def __init__(self, app, rpm: Optional[int] = None, burst: Optional[int] = None):
         super().__init__(app)
-        self.rpm = int(os.getenv("RATE_LIMIT_RPM", str(rpm)))
-        self.burst = int(os.getenv("RATE_LIMIT_BURST", str(burst)))
-        # Per-IP request timestamps
-        self._minute_windows: dict[str, list[float]] = defaultdict(list)
-        self._second_windows: dict[str, list[float]] = defaultdict(list)
+        dev = os.getenv("APP_ENV", "development").lower() == "development"
+        default_rpm, default_burst = self.DEV_DEFAULTS if dev else self.PROD_DEFAULTS
+        self.rpm = int(os.getenv("RATE_LIMIT_RPM", str(rpm or default_rpm)))
+        self.burst = int(os.getenv("RATE_LIMIT_BURST", str(burst or default_burst)))
+        # Per-client request timestamps (oldest first). Idle clients are swept,
+        # so memory is bounded by recent distinct clients, not all-time ones.
+        self._windows: dict[str, deque] = {}
+        self._last_sweep = 0.0
 
     def _get_client_ip(self, request: Request) -> str:
-        """Get client IP, respecting X-Forwarded-For for reverse proxies."""
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            # Take the first (client) IP, not the proxy chain
-            return forwarded.split(",")[0].strip()
-        return request.client.host if request.client else "unknown"
+        """Client address; X-Forwarded-For only as far as TRUSTED_PROXY_HOPS allows (app/security/net.py)."""
+        from app.security.net import client_ip
+
+        return client_ip(request)
+
+    def _sweep(self, now: float) -> None:
+        cutoff = now - 60.0
+        for ip in [ip for ip, w in self._windows.items() if not w or w[-1] <= cutoff]:
+            del self._windows[ip]
+        if len(self._windows) > self.MAX_TRACKED_CLIENTS:
+            # Under a flood of distinct addresses, keep only the most recently seen half of the cap.
+            keep = self.MAX_TRACKED_CLIENTS // 2
+            for ip in sorted(self._windows, key=lambda k: self._windows[k][-1])[: len(self._windows) - keep]:
+                del self._windows[ip]
+        self._last_sweep = now
+
+    def _reject(self, detail: str, retry_after: int) -> Response:
+        return Response(
+            content=f'{{"detail":"{detail}"}}',
+            status_code=429,
+            headers={"Content-Type": "application/json", "Retry-After": str(retry_after),
+                     "X-RateLimit-Limit": str(self.rpm), "X-RateLimit-Remaining": "0"},
+        )
 
     async def dispatch(self, request: Request, call_next):
         # Skip rate limiting for health checks
@@ -131,50 +202,27 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
 
         ip = self._get_client_ip(request)
         now = time.time()
+        if now - self._last_sweep > self.SWEEP_EVERY_S or len(self._windows) > self.MAX_TRACKED_CLIENTS:
+            self._sweep(now)
 
-        # ── Per-minute window ───────────────────────────────────────────
-        window = self._minute_windows[ip]
-        cutoff = now - 60.0
-        # Prune old entries
-        self._minute_windows[ip] = [t for t in window if t > cutoff]
-        if len(self._minute_windows[ip]) >= self.rpm:
-            logger.warning("Rate limit exceeded for IP %s (%d RPM)", ip, self.rpm)
-            return Response(
-                content='{"detail":"Rate limit exceeded. Try again later."}',
-                status_code=429,
-                headers={
-                    "Content-Type": "application/json",
-                    "Retry-After": "60",
-                    "X-RateLimit-Limit": str(self.rpm),
-                    "X-RateLimit-Remaining": "0",
-                },
-            )
+        window = self._windows.setdefault(ip, deque())
+        while window and window[0] <= now - 60.0:
+            window.popleft()
+        if len(window) >= self.rpm:
+            logger.warning("Rate limit exceeded (%d RPM)", self.rpm)
+            return self._reject("Rate limit exceeded. Try again later.", 60)
+        recent = 0
+        for t in reversed(window):
+            if t <= now - 1.0:
+                break
+            recent += 1
+        if recent >= self.burst:
+            return self._reject("Burst rate exceeded. Slow down.", 1)
 
-        # ── Per-second burst ────────────────────────────────────────────
-        burst_window = self._second_windows[ip]
-        burst_cutoff = now - 1.0
-        self._second_windows[ip] = [t for t in burst_window if t > burst_cutoff]
-        if len(self._second_windows[ip]) >= self.burst:
-            return Response(
-                content='{"detail":"Burst rate exceeded. Slow down."}',
-                status_code=429,
-                headers={
-                    "Content-Type": "application/json",
-                    "Retry-After": "1",
-                },
-            )
-
-        # Record this request
-        self._minute_windows[ip].append(now)
-        self._second_windows[ip].append(now)
-
+        window.append(now)
         response = await call_next(request)
-
-        # Add rate limit headers
-        remaining = max(0, self.rpm - len(self._minute_windows[ip]))
         response.headers["X-RateLimit-Limit"] = str(self.rpm)
-        response.headers["X-RateLimit-Remaining"] = str(remaining)
-
+        response.headers["X-RateLimit-Remaining"] = str(max(0, self.rpm - len(window)))
         return response
 
 
@@ -289,9 +337,10 @@ def configure_cors(app: FastAPI) -> None:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
-        allow_credentials=True,
+        # Auth is a bearer header, never a cookie, so credentialed CORS is off.
+        allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Groq-Api-Key", "X-Gemini-Api-Key"],
         max_age=600,  # Cache preflight for 10 minutes
     )
 

@@ -1,383 +1,324 @@
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  Activity, Play, Square, TrendingUp, TrendingDown,
-  Briefcase, ArrowUpDown, AlertCircle, Loader2, RotateCcw,
-  Brain, Target, Cpu, PieChart, RefreshCw,
+  Activity, AlertTriangle, Download, FileSpreadsheet, FileText, Loader2, Play, ShieldCheck, Table2,
 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { setActiveSymbol } from '../lib/activeSymbol';
+import { apiFetch } from '../lib/api';
+
+// Paper books: simulated orders driven by ARTHA's deterministic signals.
+// Every number on this page comes from /api/paper/report (the order ledger);
+// nothing is computed or projected here except display formatting.
+
+const inr = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+const inr0 = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
+const money = (v) => (v == null ? '—' : `₹${inr.format(v)}`);
+const moneyShort = (v) => {
+  if (v == null) return '—';
+  const a = Math.abs(v);
+  if (a >= 1e7) return `₹${(v / 1e7).toFixed(2)} Cr`;
+  if (a >= 1e5) return `₹${(v / 1e5).toFixed(2)} L`;
+  return `₹${inr.format(v)}`;
+};
+const pct = (v, d = 2) => (v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(d)}%`);
+const tone = (v) => (v > 0 ? 'text-emerald-500' : v < 0 ? 'text-rose-500' : 'text-on-surface');
+const when = (iso) => (iso ? new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
 
 export default function PaperTrading() {
-  const [status, setStatus] = useState(null);
-  const [portfolio, setPortfolio] = useState(null);
-  const [trades, setTrades] = useState([]);
-  const [validation, setValidation] = useState(null);
-  const [strategyWeights, setStrategyWeights] = useState(null);
-  const [starting, setStarting] = useState(false);
-  const [stopping, setStopping] = useState(false);
-  const [retraining, setRetraining] = useState(false);
-  const pollingRef = useRef(null);
+  const { session } = useAuth();
+  const navigate = useNavigate();
+  const [report, setReport] = useState(null);
+  const [error, setError] = useState(null);
+  const [book, setBook] = useState('validated');
+  const [running, setRunning] = useState(false);
+  const [downloading, setDownloading] = useState(null);
+  const [orderFilter, setOrderFilter] = useState('');
 
-  // Fetch all data
-  const fetchAll = async () => {
+  const auth = useMemo(
+    () => (session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    [session?.access_token],
+  );
+
+  const load = useCallback(async () => {
     try {
-      const [sRes, pRes, tRes, vRes, swRes] = await Promise.all([
-        fetch('/api/paper-trade/status'),
-        fetch('/api/paper-trade/portfolio').catch(() => ({ ok: false })),
-        fetch('/api/paper-trade/trades?limit=20').catch(() => ({ ok: false })),
-        fetch('/api/paper-trade/validation').catch(() => ({ ok: false })),
-        fetch('/api/paper-trade/strategy-weights').catch(() => ({ ok: false })),
-      ]);
-      if (sRes.ok) setStatus(await sRes.json());
-      if (pRes.ok) setPortfolio(await pRes.json());
-      if (tRes.ok) { const d = await tRes.json(); setTrades(d.trades || []); }
-      if (vRes.ok) setValidation(await vRes.json());
-      if (swRes.ok) setStrategyWeights(await swRes.json());
-    } catch (err) {
-      console.error('Failed to fetch paper trading data:', err);
+      const res = await apiFetch('/api/paper/report', { headers: auth });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setReport(await res.json());
+      setError(null);
+    } catch (e) {
+      setError(`Could not load the paper report (${e.message}).`);
+    }
+  }, [auth]);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 30_000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  const runNow = async () => {
+    setRunning(true);
+    try {
+      const res = await apiFetch('/api/paper/run', { method: 'POST', headers: auth });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+      await load();
+    } catch (e) {
+      setError(`Cycle failed: ${e.message}`);
+    } finally {
+      setRunning(false);
     }
   };
 
-  // Poll every 15 seconds
-  useEffect(() => {
-    fetchAll();
-    pollingRef.current = setInterval(fetchAll, 15000);
-    return () => clearInterval(pollingRef.current);
-  }, []);
-
-  const startDaemon = async () => {
-    setStarting(true);
+  // Downloads go through fetch so the bearer token is sent when auth is enabled.
+  const download = async (fmt, table) => {
+    const key = table ? `${fmt}:${table}` : fmt;
+    setDownloading(key);
     try {
-      await fetch('/api/paper-trade/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initial_capital: 50000000 }),
-      });
-      await fetchAll();
-    } catch (err) { console.error(err); }
-    setStarting(false);
+      const qs = table ? `?table=${encodeURIComponent(table)}` : '';
+      const res = await apiFetch(`/api/paper/export/${fmt}${qs}`, { headers: auth });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') || '')?.[1] || `artha_paper.${fmt}`;
+      const url = URL.createObjectURL(blob);
+      const a = Object.assign(document.createElement('a'), { href: url, download: name });
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      setError(`Export failed: ${e.message}`);
+    } finally {
+      setDownloading(null);
+    }
   };
 
-  const stopDaemon = async () => {
-    setStopping(true);
-    try {
-      await fetch('/api/paper-trade/stop', { method: 'POST' });
-      await fetchAll();
-    } catch (err) { console.error(err); }
-    setStopping(false);
-  };
+  const openChart = (symbol) => { setActiveSymbol(symbol); navigate(`/dashboard/${encodeURIComponent(symbol)}`); };
 
-  const resetDaemon = async () => {
-    if (!window.confirm('Reset will clear ALL positions, trades, and NAV history. Continue?')) return;
-    try {
-      await fetch('/api/paper-trade/reset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirm: true }),
-      });
-      await fetchAll();
-    } catch (err) { console.error(err); }
-  };
+  if (!report) {
+    return (
+      <div className="p-6 bg-surface-dim min-h-full font-mono text-sm text-outline">
+        {error || <span className="flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading paper books…</span>}
+      </div>
+    );
+  }
 
-  const forceRetrain = async () => {
-    setRetraining(true);
-    try {
-      await fetch('/api/paper-trade/retrain', { method: 'POST' });
-      await fetchAll();
-    } catch (err) { console.error(err); }
-    setRetraining(false);
-  };
-
-  const fmt = (val) => `₹${Number(val || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-  const fmtPct = (val) => `${Number(val || 0).toFixed(2)}%`;
-  const isPositive = (val) => (val || 0) >= 0;
-  const isRunning = status?.state === 'RUNNING' || status?.state === 'SLEEPING';
-
-  const regimeColor = {
-    BULL: 'text-emerald-400',
-    BEAR: 'text-rose-400',
-    SIDEWAYS: 'text-amber-400',
-    UNKNOWN: 'text-outline',
-  };
-
-  const regimeBg = {
-    BULL: 'bg-emerald-500/20 border-emerald-500/40',
-    BEAR: 'bg-rose-500/20 border-rose-500/40',
-    SIDEWAYS: 'bg-amber-500/20 border-amber-500/40',
-    UNKNOWN: 'bg-outline-variant/20 border-outline-variant/40',
-  };
-
-  const marketStatusColor = {
-    OPEN: 'bg-emerald-500',
-    PRE_MARKET: 'bg-amber-500',
-    CLOSED: 'bg-outline-variant',
-    'CLOSED (Weekend)': 'bg-outline-variant',
-  };
+  const books = report.books || [];
+  const current = books.find((b) => b.book === book) || books[0];
+  const combined = report.combined || {};
+  const sched = report.scheduler || {};
+  const lastRun = report.last_runs?.[0];
+  const orders = [...(current?.orders || [])].reverse()
+    .filter((o) => !orderFilter || o.symbol.includes(orderFilter.toUpperCase()));
 
   return (
-    <div className="p-4 md:p-6 bg-surface-dim min-h-full">
+    <div className="p-4 md:p-6 bg-surface-dim min-h-full space-y-5">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 border-b border-outline-variant pb-4 gap-4">
+      <div className="flex flex-col lg:flex-row justify-between gap-4 border-b border-outline-variant pb-4">
         <div>
-          <h1 className="font-display text-3xl text-on-surface">Live Paper Trading</h1>
-          <p className="text-outline text-sm mt-1 font-mono">
-            Full multi-strategy engine on real market data — no real orders placed
+          <h1 className="font-display text-3xl text-on-surface">Paper Trading</h1>
+          <p className="text-outline text-xs mt-1 font-mono">
+            Simulated orders only — ARTHA never places a real order. Signals from the live quant engine, filled at market price + 15 bp.
           </p>
-        </div>
-        <div className="flex gap-2 items-center">
-          {/* Market Status */}
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-surface rounded border border-outline-variant">
-            <span className={`w-2 h-2 rounded-full animate-pulse ${marketStatusColor[status?.market_status] || 'bg-outline-variant'}`} />
-            <span className="text-xs font-mono text-outline">{status?.market_status || 'UNKNOWN'}</span>
-          </div>
-
-          {!isRunning ? (
-            <button id="start-daemon-btn" onClick={startDaemon} disabled={starting}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-ui text-xs uppercase tracking-widest rounded-sm transition-colors disabled:opacity-50">
-              {starting ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-              Start Daemon
-            </button>
-          ) : (
-            <button id="stop-daemon-btn" onClick={stopDaemon} disabled={stopping}
-              className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-ui text-xs uppercase tracking-widest rounded-sm transition-colors disabled:opacity-50">
-              {stopping ? <Loader2 size={14} className="animate-spin" /> : <Square size={14} />}
-              Stop Daemon
-            </button>
-          )}
-          <button onClick={forceRetrain} disabled={retraining} title="Force model retrain"
-            className="p-2 text-outline hover:text-amber-400 transition-colors disabled:opacity-50">
-            {retraining ? <Loader2 size={14} className="animate-spin" /> : <Brain size={14} />}
-          </button>
-          <button id="reset-daemon-btn" onClick={resetDaemon} title="Reset paper trading"
-            className="p-2 text-outline hover:text-on-surface transition-colors">
-            <RotateCcw size={14} />
-          </button>
-        </div>
-      </div>
-
-      {/* Metrics Strip */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-        <MetricCard label="Virtual NAV" value={fmt(status?.virtual_nav)} icon={<Briefcase size={14} />} />
-        <MetricCard label="Today's PnL" value={fmt(status?.today_pnl)}
-          positive={isPositive(status?.today_pnl)} showArrow icon={<ArrowUpDown size={14} />} />
-        <MetricCard label="Total PnL" value={`${fmt(status?.total_pnl)} (${fmtPct(status?.total_pnl_pct)})`}
-          positive={isPositive(status?.total_pnl)} showArrow icon={<TrendingUp size={14} />} />
-        <MetricCard label="Regime"
-          value={status?.current_regime || 'UNKNOWN'}
-          className={regimeColor[status?.current_regime] || regimeColor.UNKNOWN}
-          icon={<Activity size={14} />} />
-        <MetricCard label="Hedge Ratio"
-          value={`${((status?.hedge_ratio || 0) * 100).toFixed(0)}%`}
-          icon={<AlertCircle size={14} />} />
-      </div>
-
-      {/* Forward-Test Validation Strip */}
-      {validation && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          <div className="bg-surface border border-outline-variant rounded-sm px-4 py-3">
-            <div className="flex items-center gap-1.5 text-outline text-[10px] font-ui uppercase tracking-widest mb-1">
-              <Target size={14} />Forward Sharpe
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className={`font-mono text-lg ${validation.forward_sharpe >= 1.0 ? 'text-emerald-400' : validation.forward_sharpe >= 0.5 ? 'text-amber-400' : 'text-rose-400'}`}>
-                {validation.forward_sharpe?.toFixed(2) || '—'}
-              </span>
-              <span className="text-outline text-[10px] font-mono">
-                vs {validation.backtest_sharpe?.toFixed(2)} backtest
-              </span>
-            </div>
-          </div>
-          <MetricCard label="Ann. Return" value={fmtPct(validation.annualized_return)} icon={<TrendingUp size={14} />}
-            positive={isPositive(validation.annualized_return)} showArrow />
-          <MetricCard label="Ann. Vol" value={fmtPct(validation.annualized_vol)} icon={<Activity size={14} />} />
-          <div className="bg-surface border border-outline-variant rounded-sm px-4 py-3">
-            <div className="flex items-center gap-1.5 text-outline text-[10px] font-ui uppercase tracking-widest mb-1">
-              <Cpu size={14} />Model Status
-            </div>
-            <div className="font-mono text-xs text-on-surface">
-              {validation.model_info?.regime_detector === 'trained' ? '✓ HMM' : '✗ HMM'}
-              {' · '}
-              {validation.model_info?.ml_model === 'trained' ? '✓ ML' : '✗ ML'}
-            </div>
-            <div className="text-[10px] text-outline font-mono mt-0.5">
-              {validation.days_running || 0} days · {validation.active_strategies?.length || 0} strategies
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Strategy Weights */}
-      {strategyWeights?.strategy_signals?.length > 0 && (
-        <div className="bg-surface border border-outline-variant rounded-sm mb-6 overflow-hidden">
-          <div className="px-4 py-3 border-b border-outline-variant flex items-center justify-between">
-            <h2 className="font-ui text-xs uppercase tracking-widest text-outline flex items-center gap-1.5">
-              <PieChart size={14} />Strategy Allocation
-            </h2>
-            <span className={`text-xs font-mono px-2 py-0.5 rounded border ${regimeBg[strategyWeights.regime] || regimeBg.UNKNOWN}`}>
-              <span className={regimeColor[strategyWeights.regime] || regimeColor.UNKNOWN}>
-                {strategyWeights.regime}
-              </span>
-              {' · '}Hedge {((strategyWeights.hedge_ratio || 0) * 100).toFixed(0)}%
+          <div className="flex flex-wrap items-center gap-3 mt-3 font-mono text-[11px]">
+            <span className="flex items-center gap-1.5 px-2 py-1 border border-outline-variant bg-surface">
+              <span className={`w-2 h-2 rounded-full ${sched.state === 'running' ? 'bg-emerald-500 animate-pulse' : 'bg-outline-variant'}`} />
+              Engine {sched.state || 'unknown'}
             </span>
-          </div>
-          <div className="p-4">
-            <div className="flex gap-1 mb-3 h-3 rounded-sm overflow-hidden">
-              {strategyWeights.strategy_signals.map((s, i) => {
-                const w = strategyWeights.allocation_weights?.[s.name] || 0;
-                const colors = [
-                  'bg-emerald-500', 'bg-sky-500', 'bg-amber-500',
-                  'bg-violet-500', 'bg-rose-500', 'bg-teal-500', 'bg-orange-500',
-                ];
-                return (
-                  <div key={s.name} className={`${colors[i % colors.length]} transition-all`}
-                    style={{ width: `${Math.max(w * 100, 2)}%` }}
-                    title={`${s.name}: ${(w * 100).toFixed(1)}%`} />
-                );
-              })}
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              {strategyWeights.strategy_signals.map((s, i) => {
-                const w = strategyWeights.allocation_weights?.[s.name] || 0;
-                const colors = [
-                  'text-emerald-400', 'text-sky-400', 'text-amber-400',
-                  'text-violet-400', 'text-rose-400', 'text-teal-400', 'text-orange-400',
-                ];
-                return (
-                  <div key={s.name} className="flex items-center gap-2 text-xs">
-                    <span className={`font-mono font-medium ${colors[i % colors.length]}`}>
-                      {(w * 100).toFixed(1)}%
-                    </span>
-                    <span className="text-outline truncate">{s.name}</span>
-                    <span className="text-outline-variant text-[10px]">({s.n_positions})</span>
-                  </div>
-                );
-              })}
-            </div>
+            <span className="text-outline">Last cycle {when(lastRun?.finished_at || lastRun?.started_at)}</span>
+            {sched.next_run_at && <span className="text-outline">Next {when(sched.next_run_at)}</span>}
+            {lastRun?.note && <span className="text-on-surface-variant">{lastRun.note}</span>}
           </div>
         </div>
-      )}
+        <div className="flex flex-wrap items-start gap-2">
+          <button onClick={runNow} disabled={running}
+            className="flex items-center gap-2 px-3 py-2 border border-outline-variant bg-surface hover:border-primary text-on-surface font-ui text-[11px] uppercase tracking-widest disabled:opacity-50">
+            {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} Run cycle now
+          </button>
+          <ExportButton icon={<FileText size={13} />} label="PDF" busy={downloading === 'pdf'} onClick={() => download('pdf')} />
+          <ExportButton icon={<FileSpreadsheet size={13} />} label="Excel" busy={downloading === 'xlsx'} onClick={() => download('xlsx')} />
+          <ExportButton icon={<Download size={13} />} label="CSV (all)" busy={downloading === 'zip'} onClick={() => download('zip')} />
+        </div>
+      </div>
 
-      {/* Two-column: Portfolio + Trades */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Current Portfolio */}
-        <div className="bg-surface border border-outline-variant rounded-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-outline-variant flex items-center justify-between">
-            <h2 className="font-ui text-xs uppercase tracking-widest text-outline">
-              Current Portfolio ({status?.n_positions || 0} positions)
-            </h2>
-            {portfolio && (
-              <span className="font-mono text-xs text-outline">Cash: {fmt(portfolio.cash)}</span>
-            )}
+      {error && <p className="font-mono text-xs text-error border border-error/40 px-3 py-2">{error}</p>}
+
+      {/* Combined */}
+      <section>
+        <h2 className="font-ui text-[10px] uppercase tracking-widest text-outline mb-2">All books combined <span className="normal-case tracking-normal">— includes the unvalidated shadow book</span></h2>
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+          <Stat label="Start capital" value={moneyShort(combined.initial_capital)} />
+          <Stat label="NAV" value={moneyShort(combined.nav)} />
+          <Stat label="Total P&L" value={money(combined.total_pnl)} sub={pct(combined.total_return_pct, 3)} cls={tone(combined.total_pnl)} />
+          <Stat label="Realized" value={money(combined.realized_pnl)} cls={tone(combined.realized_pnl)} />
+          <Stat label="Unrealized" value={money(combined.unrealized_pnl)} cls={tone(combined.unrealized_pnl)} />
+          <Stat label="Orders placed" value={inr0.format(combined.orders_count || 0)} />
+        </div>
+      </section>
+
+      {/* Book tabs */}
+      <div className="flex gap-1 border-b border-outline-variant">
+        {books.map((b) => (
+          <button key={b.book} onClick={() => setBook(b.book)}
+            className={`px-4 py-2 font-ui text-[11px] uppercase tracking-widest border-b-2 -mb-px flex items-center gap-2 ${b.book === current?.book ? 'border-primary text-on-surface' : 'border-transparent text-outline hover:text-on-surface'}`}>
+            {b.validated ? <ShieldCheck size={13} className="text-emerald-500" /> : <AlertTriangle size={13} className="text-amber-500" />}
+            {b.label}
+            <span className="font-mono normal-case tracking-normal text-outline">{b.orders_count}</span>
+          </button>
+        ))}
+      </div>
+
+      {current && (
+        <>
+          <div className={`px-3 py-2 border font-mono text-[11px] ${current.validated ? 'border-emerald-500/40 text-on-surface-variant' : 'border-amber-500/50 bg-amber-500/5 text-amber-600 dark:text-amber-400'}`}>
+            {current.description}
           </div>
-          <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-surface-dim">
-                <tr className="text-outline font-mono uppercase tracking-wider border-b border-outline-variant">
-                  <th className="text-left px-3 py-2">Symbol</th>
-                  <th className="text-right px-3 py-2">Qty</th>
-                  <th className="text-right px-3 py-2">Entry</th>
-                  <th className="text-right px-3 py-2">Current</th>
-                  <th className="text-right px-3 py-2">P&L</th>
-                </tr>
-              </thead>
-              <tbody>
-                {portfolio?.positions?.length > 0 ? (
-                  portfolio.positions.map((pos, i) => (
-                    <tr key={pos.symbol} className={`border-b border-outline-variant/30 ${i % 2 === 0 ? 'bg-surface' : 'bg-surface-dim/50'}`}>
-                      <td className="px-3 py-2 font-mono text-on-surface font-medium">{pos.symbol}</td>
-                      <td className="px-3 py-2 text-right font-mono text-outline">{pos.quantity}</td>
-                      <td className="px-3 py-2 text-right font-mono text-outline">{fmt(pos.avg_entry_price)}</td>
-                      <td className="px-3 py-2 text-right font-mono text-outline">{fmt(pos.current_price)}</td>
-                      <td className={`px-3 py-2 text-right font-mono font-medium ${isPositive(pos.unrealized_pnl) ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {fmt(pos.unrealized_pnl)} ({fmtPct(pos.unrealized_pnl_pct)})
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={5} className="px-3 py-8 text-center text-outline italic">
-                      No positions yet — start the daemon to begin paper trading
+
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
+            <Stat label="NAV" value={moneyShort(current.nav)} />
+            <Stat label="Total P&L" value={money(current.total_pnl)} sub={pct(current.total_return_pct, 3)} cls={tone(current.total_pnl)} />
+            <Stat label="Realized" value={money(current.realized_pnl)} cls={tone(current.realized_pnl)} />
+            <Stat label="Unrealized" value={money(current.unrealized_pnl)} cls={tone(current.unrealized_pnl)} />
+            <Stat label="Costs paid" value={money(current.costs_paid)} />
+            <Stat label="Cash" value={moneyShort(current.cash)} />
+            <Stat label="Long / short" value={`${moneyShort(current.long_value)} / ${moneyShort(current.short_value)}`} />
+            <Stat label="Orders" value={`${current.orders_count}`} sub={`${current.buys} buy · ${current.sells} sell`} />
+          </div>
+          <p className="font-mono text-[10px] text-outline">
+            Risk metrics: {current.metrics?.note || `Sharpe ${current.metrics?.sharpe_ratio}, Sortino ${current.metrics?.sortino_ratio}, max drawdown ${current.metrics?.max_drawdown} over ${current.metrics?.sessions} sessions`}
+          </p>
+
+          {/* Positions */}
+          <Section title={`Still held (${current.positions.length})`} onCsv={() => download('csv', 'positions')} busy={downloading === 'csv:positions'}
+            hint="“If closed now” = unrealized P&L at the last price minus the 15 bp exit cost. It is a liquidation value, not a forecast.">
+            {current.positions.length === 0 ? <Empty text="No open positions." /> : (
+              <Table head={['Symbol', 'Side', 'Qty', 'Avg', 'Last', 'Value', 'Unrealized', '%', 'If closed now', 'Since', 'Exit rule']}>
+                {current.positions.map((p) => (
+                  <tr key={p.symbol} className="border-t border-outline-variant/40">
+                    <td className="px-2 py-1.5"><button onClick={() => openChart(p.symbol)} className="text-primary hover:underline">{p.symbol}</button></td>
+                    <td className={`px-2 ${p.side === 'LONG' ? 'text-emerald-500' : 'text-rose-500'}`}>{p.side}</td>
+                    <td className="px-2 text-right">{inr0.format(p.quantity)}</td>
+                    <td className="px-2 text-right">{inr.format(p.avg_price)}</td>
+                    <td className="px-2 text-right" title={`${p.mark_source} · ${when(p.mark_time)}`}>{p.last_price == null ? '—' : inr.format(p.last_price)}</td>
+                    <td className="px-2 text-right">{moneyShort(p.market_value)}</td>
+                    <td className={`px-2 text-right ${tone(p.unrealized_pnl)}`}>{money(p.unrealized_pnl)}</td>
+                    <td className={`px-2 text-right ${tone(p.unrealized_pct)}`}>{pct(p.unrealized_pct)}</td>
+                    <td className={`px-2 text-right ${tone(p.if_closed_now)}`}>{money(p.if_closed_now)}</td>
+                    <td className="px-2 whitespace-nowrap">{when(p.opened_at)}</td>
+                    <td className="px-2 text-on-surface-variant min-w-[220px]">
+                      {p.exit_rule || '—'}{p.z_score != null && <span className="text-outline"> · z = {p.z_score}</span>}
+                      {!p.still_targeted && <span className="text-amber-500"> · exits next session</span>}
                     </td>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                ))}
+              </Table>
+            )}
+          </Section>
 
-        {/* Recent Trades */}
-        <div className="bg-surface border border-outline-variant rounded-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-outline-variant">
-            <h2 className="font-ui text-xs uppercase tracking-widest text-outline">
-              Recent Trades ({status?.n_trades_today || 0} today)
-            </h2>
-          </div>
-          <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-surface-dim">
-                <tr className="text-outline font-mono uppercase tracking-wider border-b border-outline-variant">
-                  <th className="text-left px-3 py-2">Time</th>
-                  <th className="text-left px-3 py-2">Side</th>
-                  <th className="text-left px-3 py-2">Symbol</th>
-                  <th className="text-right px-3 py-2">Qty</th>
-                  <th className="text-right px-3 py-2">Price</th>
-                </tr>
-              </thead>
-              <tbody>
-                {trades.length > 0 ? (
-                  trades.map((t, i) => (
-                    <tr key={t.id || i} className={`border-b border-outline-variant/30 ${i % 2 === 0 ? 'bg-surface' : 'bg-surface-dim/50'}`}>
-                      <td className="px-3 py-2 font-mono text-outline">
-                        {t.timestamp ? new Date(t.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}
-                      </td>
-                      <td className={`px-3 py-2 font-mono font-medium ${t.side === 'BUY' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {t.side}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-on-surface">{t.symbol}</td>
-                      <td className="px-3 py-2 text-right font-mono text-outline">{t.quantity}</td>
-                      <td className="px-3 py-2 text-right font-mono text-outline">{fmt(t.fill_price)}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={5} className="px-3 py-8 text-center text-outline italic">No trades yet</td>
+          {/* Orders */}
+          <Section title={`Every order placed (${current.orders_count})`} onCsv={() => download('csv', 'orders')} busy={downloading === 'csv:orders'}
+            extra={<input value={orderFilter} onChange={(e) => setOrderFilter(e.target.value)} placeholder="Filter symbol"
+              className="bg-surface border border-outline-variant px-2 py-1 text-[11px] font-mono w-32 focus:outline-none focus:border-primary" />}>
+            {orders.length === 0 ? <Empty text={current.orders_count ? 'No orders match.' : 'No orders yet. Orders are placed during NSE hours once fresh prices arrive.'} /> : (
+              <Table head={['#', 'Placed (IST)', 'Symbol', 'Side', 'Qty', 'Market', 'Fill', 'Notional', 'Position', 'Realized', 'Price', 'Reason']}>
+                {orders.map((o) => (
+                  <tr key={o.id} className="border-t border-outline-variant/40 align-top">
+                    <td className="px-2 py-1.5 text-outline">{o.id}</td>
+                    <td className="px-2 whitespace-nowrap">{when(o.placed_at)}</td>
+                    <td className="px-2">{o.symbol}</td>
+                    <td className={`px-2 ${o.side === 'BUY' ? 'text-emerald-500' : 'text-rose-500'}`}>{o.side}</td>
+                    <td className="px-2 text-right">{inr0.format(o.quantity)}</td>
+                    <td className="px-2 text-right">{inr.format(o.ref_price)}</td>
+                    <td className="px-2 text-right">{inr.format(o.fill_price)}</td>
+                    <td className="px-2 text-right">{moneyShort(o.notional)}</td>
+                    <td className="px-2 text-right whitespace-nowrap">{inr0.format(o.position_before)} → {inr0.format(o.position_after)}</td>
+                    <td className={`px-2 text-right ${tone(o.realized_pnl)}`}>{o.realized_pnl ? money(o.realized_pnl) : '—'}</td>
+                    <td className="px-2 text-outline whitespace-nowrap" title={o.price_observed_at}>{o.price_source}</td>
+                    <td className="px-2 text-on-surface-variant min-w-[280px]">{o.reason}</td>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* Daemon Info Footer */}
-      {status && (
-        <div className="mt-4 flex flex-wrap gap-4 text-[10px] font-mono text-outline-variant/60">
-          <span>State: {status.state}</span>
-          {status.started_at && <span>Started: {new Date(status.started_at).toLocaleString('en-IN')}</span>}
-          {status.last_signal_time && <span>Last Signal: {new Date(status.last_signal_time).toLocaleString('en-IN')}</span>}
-          {validation?.model_info?.last_ml_train && <span>Last ML Retrain: {validation.model_info.last_ml_train}</span>}
-          {validation?.model_info?.last_regime_train && <span>Last HMM Retrain: {validation.model_info.last_regime_train}</span>}
-          {status.last_error && <span className="text-rose-400">Error: {status.last_error}</span>}
-        </div>
+                ))}
+              </Table>
+            )}
+          </Section>
+        </>
       )}
+
+      {/* Engine log */}
+      <Section title="Engine cycles" icon={<Activity size={12} />}>
+        <Table head={['Started', 'Session', 'Signals', 'Orders', 'Note']}>
+          {(report.last_runs || []).map((r) => (
+            <tr key={r.id} className="border-t border-outline-variant/40">
+              <td className="px-2 py-1 whitespace-nowrap">{when(r.started_at)}</td>
+              <td className="px-2">{r.session_open ? 'open' : 'closed'}</td>
+              <td className="px-2">{r.signal_as_of || '—'}</td>
+              <td className="px-2 text-right">{r.n_orders}</td>
+              <td className="px-2 text-on-surface-variant">{r.note}</td>
+            </tr>
+          ))}
+        </Table>
+      </Section>
+
+      <footer className="border-t border-outline-variant pt-3 space-y-1 font-mono text-[10px] text-outline">
+        <p className="text-on-surface-variant">{report.disclaimer}</p>
+        {(report.notes || []).map((n) => <p key={n}>• {n}</p>)}
+        <p>Report generated {when(report.generated_at)}.</p>
+      </footer>
     </div>
   );
 }
 
-// Reusable Metric Card
-function MetricCard({ label, value, positive, showArrow, icon, className }) {
+function ExportButton({ icon, label, busy, onClick }) {
   return (
-    <div className="bg-surface border border-outline-variant rounded-sm px-4 py-3">
-      <div className="flex items-center gap-1.5 text-outline text-[10px] font-ui uppercase tracking-widest mb-1">
-        {icon}
-        {label}
-      </div>
-      <div className={`font-mono text-lg ${
-        className || (showArrow
-          ? (positive ? 'text-emerald-400' : 'text-rose-400')
-          : 'text-on-surface')
-      }`}>
-        {showArrow && (positive ? <TrendingUp size={12} className="inline mr-1" /> : <TrendingDown size={12} className="inline mr-1" />)}
-        {value}
-      </div>
+    <button onClick={onClick} disabled={busy}
+      className="flex items-center gap-2 px-3 py-2 border border-outline-variant bg-surface hover:border-primary text-on-surface font-ui text-[11px] uppercase tracking-widest disabled:opacity-50">
+      {busy ? <Loader2 size={13} className="animate-spin" /> : icon} {label}
+    </button>
+  );
+}
+
+function Stat({ label, value, sub, cls = 'text-on-surface' }) {
+  return (
+    <div className="bg-surface border border-outline-variant px-3 py-2 min-w-0">
+      <div className="font-ui text-[9px] uppercase tracking-widest text-outline">{label}</div>
+      <div className={`font-mono text-sm mt-0.5 truncate ${cls}`} title={typeof value === 'string' ? value : undefined}>{value}</div>
+      {sub && <div className={`font-mono text-[10px] ${cls}`}>{sub}</div>}
     </div>
   );
+}
+
+function Section({ title, hint, children, onCsv, busy, extra, icon }) {
+  return (
+    <section className="bg-surface border border-outline-variant">
+      <div className="flex flex-wrap justify-between items-center gap-2 px-3 py-2 border-b border-outline-variant">
+        <h2 className="font-ui text-[10px] uppercase tracking-widest text-on-surface flex items-center gap-1.5">{icon}{title}</h2>
+        <div className="flex items-center gap-2">
+          {extra}
+          {onCsv && (
+            <button onClick={onCsv} disabled={busy} className="flex items-center gap-1 font-ui text-[10px] uppercase tracking-widest text-outline hover:text-primary disabled:opacity-50">
+              {busy ? <Loader2 size={11} className="animate-spin" /> : <Table2 size={11} />} CSV
+            </button>
+          )}
+        </div>
+      </div>
+      {hint && <p className="px-3 pt-2 font-mono text-[10px] text-outline">{hint}</p>}
+      <div className="overflow-x-auto">{children}</div>
+    </section>
+  );
+}
+
+function Table({ head, children }) {
+  return (
+    <table className="w-full font-mono text-[11px] text-on-surface">
+      <thead>
+        <tr className="text-outline font-ui text-[9px] uppercase tracking-widest">
+          {head.map((h) => <th key={h} className="px-2 py-1.5 text-left font-normal whitespace-nowrap">{h}</th>)}
+        </tr>
+      </thead>
+      <tbody>{children}</tbody>
+    </table>
+  );
+}
+
+function Empty({ text }) {
+  return <p className="px-3 py-4 font-mono text-[11px] text-outline">{text}</p>;
 }

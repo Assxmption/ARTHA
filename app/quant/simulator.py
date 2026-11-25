@@ -303,14 +303,13 @@ def _compute_stock_signals(
 
 
 def _mad_zscore(values: np.ndarray) -> np.ndarray:
-    """MAD-robust cross-sectional z-score."""
-    valid = values[~np.isnan(values)]
-    if len(valid) < 3:
-        return np.zeros_like(values)
-    median = np.nanmedian(values)
-    mad = np.nanmedian(np.abs(valid - median))
-    scale = 1.4826 * mad if mad > 1e-10 else max(np.nanstd(valid), 1e-10)
-    result = (values - median) / scale
+    """MAD-robust cross-sectional z-score.
+
+    Delegates to the centralised robust_outliers module.
+    Kept as a thin wrapper to avoid breaking call sites.
+    """
+    from app.quant.robust_outliers import robust_zscore_cross_sectional
+    result = robust_zscore_cross_sectional(values, winsor_z=None)
     return np.where(np.isnan(result), 0.0, result)
 
 
@@ -1001,7 +1000,7 @@ if __name__ == "__main__":
         "HINDUNILVR", "ITC", "SBIN", "BHARTIARTL", "KOTAKBANK",
         "LT", "HCLTECH", "AXISBANK", "ASIANPAINT", "MARUTI",
         "SUNPHARMA", "TITAN", "ULTRACEMCO", "BAJFINANCE", "WIPRO",
-        "NESTLEIND", "M&M", "TATAMOTORS", "POWERGRID", "NTPC",
+        "NESTLEIND", "M&M", "TMPV", "POWERGRID", "NTPC",
     ]
     
     # Download data

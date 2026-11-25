@@ -17,6 +17,7 @@ import sys
 import tempfile
 
 import pytest
+from pydantic import ValidationError
 
 # Ensure project root is on path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -205,7 +206,13 @@ class TestFactStoreQueries:
         store.put_fact(QuantSignal(
             job_id=job_id, symbol_or_pair="PAIR-A",
             signal_type=SignalType.MOMENTUM, value=0.5,
-            validated=True, as_of=date(2025, 3, 31),
+            validated=True,
+            validation_method="walk_forward_oos",
+            validation_id="wf-test-001",
+            validation_oos_days=504,
+            backtest_sharpe=1.2,
+            backtest_max_drawdown=0.2,
+            as_of=date(2025, 3, 31),
             source="backtest_v1",
         ))
         store.put_fact(QuantSignal(
@@ -237,6 +244,19 @@ class TestFactStoreQueries:
         counts = store.count_facts(job_id)
         assert counts["fundamental"] == 3
         assert counts["risk_flag"] == 1
+
+    def test_validated_signal_requires_walk_forward_evidence(self):
+        """A boolean alone must never clear the validation gate."""
+        with pytest.raises(ValidationError):
+            QuantSignal(
+                job_id="job-validation-proof",
+                symbol_or_pair="PAIR-A",
+                signal_type=SignalType.MOMENTUM,
+                value=0.5,
+                validated=True,
+                as_of=date(2025, 3, 31),
+                source="backtest_v1",
+            )
 
 
 class TestFactStoreCheckpointing:
@@ -272,6 +292,27 @@ class TestFactStoreCheckpointing:
         assert len(facts) == 2
         assert all(isinstance(f, FundamentalRow) for f in facts)
         assert all(f.source == "stage1" for f in facts)
+
+    def test_job_state_survives_store_reopen(self, tmp_path):
+        """Stage metadata must survive a worker/process restart."""
+        db_path = str(tmp_path / "job_state.db")
+        first = FactStore(db_path=db_path)
+        first.upsert_job(
+            job_id="resume-job",
+            symbol="SBIN",
+            status="running",
+            current_stage="fundamentals",
+            stages={"fundamentals": {"status": "ok", "facts_written": 2}},
+            attempt_count=3,
+        )
+
+        second = FactStore(db_path=db_path)
+        state = second.get_job_state("resume-job")
+        assert state is not None
+        assert state["status"] == "running"
+        assert state["current_stage"] == "fundamentals"
+        assert state["attempt_count"] == 3
+        assert state["stages"]["fundamentals"]["status"] == "ok"
 
 
 class TestFactStoreBulkOps:

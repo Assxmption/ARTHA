@@ -356,7 +356,7 @@ ABSOLUTE RULES:
 2. Every numeric value you mention MUST cite its Fact ID in brackets, e.g. [abc12345…].
 3. If a metric is missing, say "not available" — do not guess.
 4. MAKE IT READABLE: Do not overwhelm the reader with too many numbers. Focus on the most important inflection points and trends.
-5. FORMATTING: Trim large INR_crore values using Indian numbering terms for readability (e.g., convert 877835.00 to 8.78 Lakh Crore, or 50000.00 to 50k Crore). Wrap ALL numeric values and percentages in **bold** (e.g. **8.78 Lakh Crore** [abc12345...]).
+5. FORMATTING: Copy every value exactly as shown, with its unit as given (e.g. INR_crore, USD_million, percent). Do NOT convert units or currencies, and do not rescale (no lakh/crore/billion conversions) — conversions are computations. Wrap ALL numeric values and percentages in **bold** (e.g. **877835.00 INR_crore** [abc12345...]).
 
 STRUCTURE your analysis strictly with these Markdown headings:
 ### Financial Health
@@ -565,58 +565,59 @@ def stream_fundamentals_narrative(
     )
 
     try:
-        from app.llm.router import _PROVIDER_CHAINS, ModelTier, _get_api_key, _groq_keys, mark_key_exhausted
-        
-        chain = _PROVIDER_CHAINS.get(ModelTier.CHEAP, [])
-        response = None
+        from app.llm.router import (
+            ModelTier,
+            is_rate_limit_error,
+            mark_provider_rate_limited,
+            provider_attempts,
+        )
+
         full_text = ""
         last_error = None
-        
-        for provider_config in chain:
-            provider = provider_config["provider"]
-            model = provider_config["model"]
-            
-            api_key = None
-            if provider == "groq":
-                api_key = _groq_keys.get_current_key()
-            else:
-                api_key = _get_api_key(provider)
-                
-            if not api_key:
-                continue
-                
-            model_name = f"{provider}/{model}" if "/" not in model else model
+
+        from app.llm.keys import current_keys, redact
+
+        visitor_keys = current_keys()
+        for attempt in provider_attempts(ModelTier.CHEAP, visitor_keys):
+            model_name = attempt.model
             logger.info(f"Trying to stream narrative for {symbol} using {model_name}")
-            
+
             try:
-                response = completion(
+                stream_kwargs = dict(
                     model=model_name,
                     messages=[{"role": "user", "content": prompt}],
-                    api_key=api_key,
                     stream=True,
-                    timeout=60
+                    timeout=60,
                 )
-                
-                # If we get here, connection opened successfully
+                if attempt.api_key:
+                    stream_kwargs["api_key"] = attempt.api_key
+                if attempt.config.get("base_url"):
+                    stream_kwargs["api_base"] = attempt.config["base_url"]
+                if "gpt-oss" in model_name:
+                    stream_kwargs.update(attempt.config.get("extra", {}))
+                response = completion(**stream_kwargs)
+
                 for chunk in response:
                     delta = chunk.choices[0].delta.content
                     if delta:
                         full_text += delta
                         yield delta
-                
-                # If we successfully streamed all chunks, break out of fallback loop
                 break
-                
+
             except Exception as e:
-                last_error = e
-                logger.warning(f"Streaming LLM failed for {model_name} on {symbol}: {e}")
-                if provider == "groq":
-                    mark_key_exhausted(api_key)
+                last_error = RuntimeError(redact(f"{type(e).__name__}: {e}", visitor_keys))
+                logger.warning("Streaming LLM failed for %s on %s: %s", model_name, symbol, last_error)
+                if is_rate_limit_error(e) and not attempt.byok:
+                    mark_provider_rate_limited(attempt.provider, attempt.api_key)
+                if full_text:
+                    # Text already reached the client; retrying on another
+                    # provider would duplicate it.  Stop here.
+                    raise
                 continue
-                
+
         if not full_text:
             raise Exception(f"All providers failed. Last error: {last_error}")
-                
+
     except Exception as e:
         logger.error(f"Streaming narrative completely failed for {symbol}: {e}")
         yield "\n\n*Error generating narrative.*"

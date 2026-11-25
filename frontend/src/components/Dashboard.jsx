@@ -2,10 +2,14 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import CandlestickChart from './CandlestickChart';
 import OptionsChain from './OptionsChain';
+import SessionReplay from './SessionReplay';
+import { useRememberSymbol } from '../lib/activeSymbol';
 import { Filter, SlidersHorizontal, Activity, FileText, Newspaper } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 
 export default function Dashboard({ theme }) {
   const { symbol } = useParams();
+  useRememberSymbol(symbol);
   const navigate = useNavigate();
   const [portfolio, setPortfolio] = useState(null);
   const [regime, setRegime] = useState(null);
@@ -16,24 +20,32 @@ export default function Dashboard({ theme }) {
   const [rawFacts, setRawFacts] = useState({});
   
   useEffect(() => {
-    // Fetch data from existing backend
+    let cancelled = false;
+    let timer;
       const fetchData = async () => {
         try {
           const [portRes, regRes] = await Promise.all([
-            fetch('/api/quant/portfolio').then(res => res.json()),
-            fetch('/api/quant/regime').then(res => res.json())
+            apiFetch('/api/quant/portfolio').then(async res => {
+              const body = await res.json();
+              return res.ok ? body : { unavailable: body?.detail?.message || `HTTP ${res.status}` };
+            }),
+            apiFetch('/api/quant/regime').then(res => res.json())
           ]);
+          if (cancelled) return;
           setPortfolio(portRes);
           setRegime(regRes);
           setRawFacts({ portfolio: portRes, regime: regRes });
+          // A stale result is shown while the engine recomputes; poll until fresh.
+          if (portRes?.refreshing) timer = setTimeout(fetchData, 15000);
         } catch (e) {
           console.error("Failed to fetch quant data", e);
-          setError("Failed to connect to Quant Engine. Ensure backend is running.");
+          if (!cancelled) setError("Failed to connect to Quant Engine. Ensure backend is running.");
         } finally {
-          setLoading(false);
+          if (!cancelled) setLoading(false);
         }
       };
     fetchData();
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [symbol]);
 
   if (loading) {
@@ -131,8 +143,10 @@ export default function Dashboard({ theme }) {
                   <p className={`font-mono text-lg ${regime.current_regime === 'BULL' ? 'text-secondary' : regime.current_regime === 'BEAR' ? 'text-error' : 'text-primary'}`}>{regime.current_regime || 'UNKNOWN'}</p>
                 </div>
                 <div className="border-l-2 border-outline-variant pl-3">
-                  <p className="font-ui text-[10px] uppercase text-outline">Data Points</p>
-                  <p className="font-mono text-lg text-on-surface">{regime.data_points?.toLocaleString() || 'N/A'}</p>
+                  <p className="font-ui text-[10px] uppercase text-outline">In State Since</p>
+                  <p className="font-mono text-sm text-on-surface">
+                    {regime.state_since ? `${regime.state_since} (${regime.sessions_in_state} sessions)` : 'N/A'}
+                  </p>
                 </div>
                 <div className="border-l-2 border-outline-variant pl-3">
                   <p className="font-ui text-[10px] uppercase text-outline">Date Range</p>
@@ -152,9 +166,26 @@ export default function Dashboard({ theme }) {
         <div className="lg:col-span-4 flex flex-col gap-4">
           <div className="border border-outline-variant bg-surface flex-1">
             <div className="border-b border-outline-variant p-3 bg-surface-container-low flex justify-between items-center">
-              <span className="font-ui text-[10px] uppercase tracking-widest text-on-surface">Portfolio Metrics</span>
+              <span className="font-ui text-[10px] uppercase tracking-widest text-on-surface">Portfolio Metrics (Live OOS)</span>
               <Activity size={14} className="text-primary" />
             </div>
+            {portfolio?.unavailable ? (
+              <p className="p-3 font-mono text-xs text-error">Live engine unavailable: {portfolio.unavailable}</p>
+            ) : (
+            <div className="px-3 py-2 border-b border-outline-variant/50 font-mono text-[10px] text-outline space-y-1">
+              <div className="flex flex-wrap gap-2 items-center">
+                <span>As of {portfolio?.as_of ?? '—'}</span>
+                {portfolio?.provisional && <span className="px-1 border border-primary text-primary">PROVISIONAL</span>}
+                {portfolio?.stale && <span className="px-1 border border-outline text-outline">{portfolio?.refreshing ? 'REFRESHING' : 'STALE'}</span>}
+                <span className={`px-1 border ${portfolio?.vt_validated ? 'border-secondary text-secondary' : 'border-error text-error'}`}>
+                  GATE {portfolio?.vt_validated ? 'PASSED' : 'NOT PASSED'}
+                </span>
+              </div>
+              {portfolio?.windows && (
+                <div>OOS {portfolio.windows.test_start} → {portfolio.windows.test_end} ({portfolio.windows.oos_sessions} sessions)</div>
+              )}
+            </div>
+            )}
             <div className="p-0">
               <table className="w-full text-left font-mono text-xs">
                 <thead>
@@ -165,11 +196,12 @@ export default function Dashboard({ theme }) {
                 </thead>
                 <tbody>
                   {[
-                    ['Sharpe Ratio (VT)', portfolio?.vt_sharpe?.toFixed(2) || 'N/A'],
-                    ['Max Drawdown', portfolio?.vt_max_dd ? `${(portfolio.vt_max_dd * 100).toFixed(1)}%` : 'N/A'],
-                    ['Win Rate', portfolio?.win_rate ? `${(portfolio.win_rate * 100).toFixed(1)}%` : 'N/A'],
-                    ['Universe Size', portfolio?.universe_size || 'N/A'],
-                    ['Pairs Validated', portfolio?.pairs_validated || 'N/A'],
+                    ['OOS Sharpe (vol-targeted)', fmtNum(portfolio?.vt_sharpe)],
+                    ['OOS Max Drawdown', fmtPct(portfolio?.vt_max_dd)],
+                    ['OOS Positive Sessions', fmtPct(portfolio?.win_rate)],
+                    ['NIFTY 50 OOS Sharpe', fmtNum(portfolio?.benchmark_sharpe)],
+                    ['Universe Size', portfolio?.universe_size ?? 'N/A'],
+                    ['Pairs Validated', portfolio?.pairs_validated != null ? `${portfolio.pairs_validated} of ${portfolio.pairs_total}` : 'N/A'],
                   ].map(([label, val], idx) => (
                     <tr key={label} className={`border-b border-outline-variant/30 ${idx % 2 === 0 ? 'bg-surface' : 'bg-surface-container-lowest'}`}>
                       <td className="p-3 text-on-surface-variant">{label}</td>
@@ -178,10 +210,23 @@ export default function Dashboard({ theme }) {
                   ))}
                 </tbody>
               </table>
+              {portfolio?.disclaimer && (
+                <p className="p-3 font-mono text-[10px] text-outline-variant">{portfolio.disclaimer}</p>
+              )}
             </div>
           </div>
+          <SessionReplay />
         </div>
       </div>
     </div>
   );
+}
+
+// `0` and negative values are real results — only null/undefined is "N/A".
+function fmtNum(v) {
+  return typeof v === 'number' && Number.isFinite(v) ? v.toFixed(2) : 'N/A';
+}
+
+function fmtPct(v) {
+  return typeof v === 'number' && Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : 'N/A';
 }

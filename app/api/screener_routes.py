@@ -20,7 +20,12 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+import threading
+import time
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+
+from app.security.auth import require_admin
 from pydantic import BaseModel, Field
 
 from app.data.screener_cache import (
@@ -221,14 +226,32 @@ async def cache_status():
     return get_cache_info()
 
 
+# One rebuild at a time: each run makes ~200 upstream requests, and overlapping
+# runs would exhaust the threadpool and risk the host IP being throttled.
+_rebuild_lock = threading.Lock()
+
+
+def _exclusive(job):
+    def run():
+        if not _rebuild_lock.acquire(blocking=False):
+            return
+        try:
+            job()
+        finally:
+            _rebuild_lock.release()
+    return run
+
+
 @router.post("/refresh")
-async def force_refresh(background_tasks: BackgroundTasks):
+async def force_refresh(background_tasks: BackgroundTasks, user=Depends(require_admin)):
     """
-    Trigger a cache refresh in the background.
+    Trigger a cache refresh in the background (operator only).
 
     Only re-fetches stale entries (older than 24 hours).
     """
-    background_tasks.add_task(refresh_cache)
+    if _rebuild_lock.locked():
+        raise HTTPException(409, "A screener rebuild is already running")
+    background_tasks.add_task(_exclusive(refresh_cache))
     return {
         "status": "refresh_started",
         "message": "Cache refresh is running in the background. "
@@ -237,13 +260,15 @@ async def force_refresh(background_tasks: BackgroundTasks):
 
 
 @router.post("/build")
-async def build_cache(background_tasks: BackgroundTasks):
+async def build_cache(background_tasks: BackgroundTasks, user=Depends(require_admin)):
     """
     Build the screener cache from scratch (first time or full rebuild).
 
     This fetches data for all ~200 NIFTY symbols and may take 2-3 minutes.
     """
-    background_tasks.add_task(build_screener_cache)
+    if _rebuild_lock.locked():
+        raise HTTPException(409, "A screener rebuild is already running")
+    background_tasks.add_task(_exclusive(build_screener_cache))
     return {
         "status": "build_started",
         "message": "Building screener cache for ~200 symbols. "

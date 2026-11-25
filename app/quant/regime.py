@@ -220,13 +220,146 @@ class RegimeDetector:
 
     # ── Prediction ──────────────────────────────────────────────────────
 
+    def _causal_hidden_states(self, X_scaled: np.ndarray) -> np.ndarray:
+        """Filter HMM states using observations available up to each row.
+
+        ``GaussianHMM.predict`` performs Viterbi decoding over the complete
+        sequence.  That is useful for retrospective labelling, but earlier
+        labels can change when later observations are appended.  Historical
+        trading paths must use the forward filter below instead.
+        """
+        if self._model is None or len(X_scaled) == 0:
+            return np.array([], dtype=int)
+
+        model = self._model
+        means = np.asarray(model.means_, dtype=float)
+        covars = np.asarray(model.covars_, dtype=float)
+        n_states, n_features = means.shape
+
+        if model.covariance_type == "diag":
+            # hmmlearn versions may expose diagonal covariances as either
+            # (states, features) or (states, features, features).
+            variances = (
+                np.diagonal(covars, axis1=1, axis2=2)
+                if covars.ndim == 3 else covars
+            )
+            variances = np.maximum(variances, 1e-12)
+            log_det = np.log(variances).sum(axis=1)
+
+            def log_emission(row: np.ndarray) -> np.ndarray:
+                delta = row[None, :] - means
+                mahalanobis = (delta * delta / variances).sum(axis=1)
+                return -0.5 * (n_features * np.log(2.0 * np.pi)
+                                + log_det + mahalanobis)
+        elif model.covariance_type == "spherical":
+            variances = np.maximum(covars, 1e-12)
+
+            def log_emission(row: np.ndarray) -> np.ndarray:
+                delta = row[None, :] - means
+                mahalanobis = (delta * delta).sum(axis=1) / variances
+                return -0.5 * (n_features * np.log(2.0 * np.pi)
+                                + n_features * np.log(variances)
+                                + mahalanobis)
+        else:
+            # The production detector defaults to diagonal covariance.  Keep
+            # full/tied support explicit so changing that setting does not
+            # silently fall back to a future-aware decoder.
+            if model.covariance_type == "tied":
+                matrices = np.repeat(covars[None, :, :], n_states, axis=0)
+            elif model.covariance_type == "full":
+                matrices = covars
+            else:
+                raise ValueError(f"Unsupported covariance type: {model.covariance_type}")
+
+            inverses = []
+            log_determinants = []
+            for matrix in matrices:
+                stable = matrix + np.eye(n_features) * 1e-12
+                sign, log_det = np.linalg.slogdet(stable)
+                if sign <= 0:
+                    raise ValueError("HMM covariance matrix is not positive definite")
+                inverses.append(np.linalg.pinv(stable))
+                log_determinants.append(log_det)
+            inverses = np.asarray(inverses)
+            log_determinants = np.asarray(log_determinants)
+
+            def log_emission(row: np.ndarray) -> np.ndarray:
+                delta = row[None, :] - means
+                mahalanobis = np.einsum(
+                    "si,sij,sj->s", delta, inverses, delta,
+                )
+                return -0.5 * (n_features * np.log(2.0 * np.pi)
+                                + log_determinants + mahalanobis)
+
+        alpha = np.asarray(model.startprob_, dtype=float) * np.exp(
+            log_emission(X_scaled[0]) - np.max(log_emission(X_scaled[0]))
+        )
+        alpha_sum = alpha.sum()
+        if not np.isfinite(alpha_sum) or alpha_sum <= 0:
+            alpha = np.full(n_states, 1.0 / n_states)
+        else:
+            alpha /= alpha_sum
+
+        states = [int(np.argmax(alpha))]
+        for row in X_scaled[1:]:
+            emission = log_emission(row)
+            emission = np.exp(emission - np.max(emission))
+            alpha = (alpha @ np.asarray(model.transmat_, dtype=float)) * emission
+            alpha_sum = alpha.sum()
+            if not np.isfinite(alpha_sum) or alpha_sum <= 0:
+                alpha = np.full(n_states, 1.0 / n_states)
+            else:
+                alpha /= alpha_sum
+            states.append(int(np.argmax(alpha)))
+        return np.asarray(states, dtype=int)
+
+    @staticmethod
+    def _apply_min_duration(
+        labels: list[RegimeState], min_regime_days: int,
+    ) -> list[RegimeState]:
+        """Confirm a new state only after it persists causally."""
+        if min_regime_days <= 1:
+            return labels
+
+        stable = RegimeState.UNKNOWN
+        pending = RegimeState.UNKNOWN
+        pending_count = 0
+        filtered: list[RegimeState] = []
+        for label in labels:
+            if label == RegimeState.UNKNOWN:
+                filtered.append(stable)
+                continue
+            if label == stable:
+                pending = RegimeState.UNKNOWN
+                pending_count = 0
+            elif label == pending:
+                pending_count += 1
+            else:
+                pending = label
+                pending_count = 1
+            if stable == RegimeState.UNKNOWN and pending_count >= min_regime_days:
+                stable = pending
+                pending = RegimeState.UNKNOWN
+                pending_count = 0
+            elif stable != RegimeState.UNKNOWN and pending_count >= min_regime_days:
+                stable = pending
+                pending = RegimeState.UNKNOWN
+                pending_count = 0
+            filtered.append(stable)
+        return filtered
+
     def predict(
         self,
         prices: pd.Series,
         min_regime_days: int = 5,
+        causal: bool = True,
     ) -> pd.Series:
         """
-        Predict regime states for a price series using Viterbi decoding.
+        Predict regime states for a price series.
+
+        By default this uses a causal forward filter. Set ``causal=False``
+        only for explicitly retrospective diagnostics; Viterbi decoding then
+        uses the complete sequence and must not feed a historical backtest.
 
         Uses the Viterbi algorithm (most likely STATE SEQUENCE) instead
         of per-observation marginal posteriors. Then applies a minimum
@@ -256,10 +389,16 @@ class RegimeDetector:
 
         try:
             X_scaled = self._scaler.transform(features.values)
-            hidden_states = self._model.predict(X_scaled)
+            hidden_states = (
+                self._causal_hidden_states(X_scaled)
+                if causal else self._model.predict(X_scaled)
+            )
 
             # Map integer states to labels
             raw_labels = [self._state_labels.get(s, RegimeState.UNKNOWN) for s in hidden_states]
+
+            if causal:
+                raw_labels = self._apply_min_duration(raw_labels, min_regime_days)
 
             labeled = pd.Series(
                 raw_labels,
@@ -332,14 +471,41 @@ class RegimeDetector:
 def detect_regime(
     prices: pd.Series,
     training_prices: Optional[pd.Series] = None,
+    min_training_observations: int = 252,
+    refit_every: int = 63,
 ) -> pd.Series:
     """
     One-shot regime detection.
 
-    If training_prices is provided, fits on that and predicts on prices.
-    Otherwise fits and predicts on the same series.
+    If training_prices is provided, fits only on that data and causally filters
+    ``prices``. Otherwise, fits expanding models only on observations strictly
+    before each prediction date, refitting every ``refit_every`` observations.
+    The latter is slower than a retrospective one-shot fit but is safe for
+    historical evaluation.
     """
-    detector = RegimeDetector()
-    fit_data = training_prices if training_prices is not None else prices
-    detector.fit(fit_data)
-    return detector.predict(prices)
+    if prices.empty:
+        return pd.Series(dtype=object, index=prices.index, name="regime")
+
+    if training_prices is not None:
+        detector = RegimeDetector()
+        detector.fit(training_prices)
+        return detector.predict(prices, causal=True)
+
+    output = pd.Series(
+        RegimeState.UNKNOWN, index=prices.index, dtype=object, name="regime",
+    )
+    detector: Optional[RegimeDetector] = None
+    last_fit_at = -refit_every
+    for position in range(max(0, min_training_observations), len(prices)):
+        if detector is None or position - last_fit_at >= refit_every:
+            # The current observation is deliberately excluded from fitting;
+            # it may be used only for the current filtered state.
+            detector = RegimeDetector()
+            detector.fit(prices.iloc[:position])
+            last_fit_at = position
+        if detector.is_fitted:
+            filtered = detector.predict(
+                prices.iloc[:position + 1], causal=True, min_regime_days=1,
+            )
+            output.iloc[position] = filtered.iloc[-1]
+    return output

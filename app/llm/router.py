@@ -1,19 +1,31 @@
 """
-Tiered LLM Router — With Per-Key Groq Rotation
+Tiered LLM Router — Honest Provider Failover
 ================================================
-Three tiers (cheap/mid/deep) with real per-key rotation on Groq:
-when key N hits a 429, rotate to key N+1 from the comma-separated
-GROQ_API_KEY list. Only after ALL keys are exhausted does the
-system failover to the next provider (Gemini → Ollama).
+Three tiers (cheap/mid/deep) with cross-provider failover that happens at
+*call time*, where rate limits actually surface.
 
 Design (AGENTS.md rules 3, 4):
-  - Cheap (8B-class): Orchestrator, Fundamentals Agent, Quant Narrator,
-    Sentiment Agent — high-quota, low-cost.
-  - Mid: Risk Agent — slightly more capable for nuanced compliance checks.
-  - Deep: Writer Agent — final synthesis, used once per job.
-  - Per-key rotation: each Groq key is tried individually on 429.
-  - Cross-provider failover: Groq → Gemini → local Ollama.
-  - Jittered exponential backoff on real 429s.
+  - Cheap: Orchestrator, Fundamentals, Quant Narrator, Sentiment.
+  - Mid: Risk Agent.
+  - Deep: Writer Agent — final synthesis, once per job.
+  - One Groq key per account; no quota multiplication through key rotation.
+  - On a real 429 the provider is put in cooldown (Retry-After if the
+    provider sends one, otherwise a jittered default) and the call moves to
+    the next provider in the tier's chain, then to a local Ollama server if
+    one is actually reachable.
+  - If every provider is cooling down, the call waits for the soonest
+    cooldown to expire (bounded by LLM_MAX_WAIT_SECONDS) and makes one more
+    pass; otherwise it raises AllProvidersFailedError so the caller can use
+    its deterministic fallback.
+
+Why the wrapper exists: constructing a crewai/litellm LLM object performs no
+network I/O, so catching 429s at construction (the previous design) could
+never trigger failover.  `FailoverLLM.call()` owns the retry loop instead.
+
+Model IDs are overridable per tier via env vars because hosted model
+catalogues change (Groq retired llama3-8b-8192 on 2025-08-30 and
+llama-3.1-8b-instant / llama-3.3-70b-versatile on 2026-08-16; see
+https://console.groq.com/docs/deprecations).
 
 Reference: docs/ARTHA_ARCHITECTURE.md §4.6
 """
@@ -23,18 +35,21 @@ from __future__ import annotations
 import logging
 import os
 import random
+import re
 import threading
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Optional
+from typing import Any, Callable, Optional
 
 from dotenv import load_dotenv
 
+from app.llm.keys import UserKeys, current_keys, owner_keys_mode, redact
+
 load_dotenv()
 
-# Ensure GOOGLE_API_KEY is set for litellm's Gemini provider
-# litellm looks for GOOGLE_API_KEY or GEMINI_API_KEY
+# litellm's Gemini provider reads GOOGLE_API_KEY or GEMINI_API_KEY.
 _gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
 if _gemini_key and not os.getenv("GOOGLE_API_KEY"):
     os.environ["GOOGLE_API_KEY"] = _gemini_key
@@ -50,32 +65,56 @@ class ModelTier(str, Enum):
     DEEP = "deep"
 
 
-# ── Groq Key Manager — per-key rotation on rate limit ───────────────────────────
+class AllProvidersFailedError(RuntimeError):
+    """Raised when every provider in a tier's chain failed for one call."""
+
+    def __init__(self, tier: "ModelTier", errors: list[tuple[str, Exception]]):
+        self.tier = tier
+        self.errors = errors
+        detail = "; ".join(f"{model}: {type(e).__name__}: {e}" for model, e in errors)
+        super().__init__(
+            f"No LLM provider succeeded for tier '{tier.value}'"
+            + (f" ({detail})" if detail else " (no provider configured or all cooling down)")
+        )
+
+
+# ── Cooldown bookkeeping ───────────────────────────────────────────────────────
+
+DEFAULT_COOLDOWN_SECONDS = 65.0  # per-minute quotas reset after ~60s
+
+
+def _cooldown_with_jitter(base: float) -> float:
+    """±20% jitter so concurrent workers don't all retry in the same second."""
+    return base * random.uniform(0.8, 1.2)
+
 
 class GroqKeyManager:
     """
-    Manages multiple Groq API keys from a comma-separated env var.
-    Rotates to the next key when the current one hits a rate limit.
-    Tracks cooldown per key so exhausted keys get retried after a wait.
-    
-    Thread-safe — multiple agents can request keys concurrently.
+    Holds the single Groq account key and its cooldown.
+
+    A comma-separated value is accepted for backwards compatibility, but only
+    the first key is used: keys from the same Groq organization share one
+    quota, so rotating them is not a rate-limit workaround (AGENTS.md rule 4).
+    Thread-safe.
     """
 
-    # Cooldown after a key hits 429 (Groq resets per-minute)
-    KEY_COOLDOWN_SECONDS = 65  # slightly over 1 minute to be safe
+    KEY_COOLDOWN_SECONDS = DEFAULT_COOLDOWN_SECONDS
 
-    def __init__(self):
+    def __init__(self) -> None:
         raw = os.getenv("GROQ_API_KEY", "").strip()
-        self._keys = [k.strip() for k in raw.split(",") if k.strip()]
+        configured_keys = [k.strip() for k in raw.split(",") if k.strip()]
+        self._keys = configured_keys[:1]
         self._current_index = 0
-        self._cooldowns: dict[int, datetime] = {}  # key_index → cooldown_until
+        self._cooldowns: dict[int, datetime] = {}
         self._lock = threading.Lock()
 
         if self._keys:
-            logger.info(
-                "GroqKeyManager: loaded %d keys, rotating on 429",
-                len(self._keys),
-            )
+            if len(configured_keys) > 1:
+                logger.warning(
+                    "Multiple GROQ_API_KEY values configured; using one key only "
+                    "because provider quotas are organization-scoped"
+                )
+            logger.info("Groq provider configured with one account key")
         else:
             logger.warning("GroqKeyManager: no GROQ_API_KEY found")
 
@@ -84,128 +123,127 @@ class GroqKeyManager:
         return len(self._keys)
 
     def get_current_key(self) -> Optional[str]:
-        """Get the current active key (skipping cooled-down ones)."""
+        """Return the key, or None if it is missing or cooling down."""
         if not self._keys:
             return None
-
         with self._lock:
-            now = datetime.now()
-            # Try each key starting from current index
-            for offset in range(len(self._keys)):
-                idx = (self._current_index + offset) % len(self._keys)
-                cooldown_until = self._cooldowns.get(idx)
+            until = self._cooldowns.get(0)
+            if until is None or datetime.now() >= until:
+                return self._keys[0]
+            return None
 
-                if cooldown_until is None or now >= cooldown_until:
-                    self._current_index = idx
-                    return self._keys[idx]
-
-            # All keys are in cooldown — return the one that expires soonest
-            soonest_idx = min(
-                self._cooldowns, key=lambda i: self._cooldowns[i]
-            )
-            wait_seconds = (self._cooldowns[soonest_idx] - now).total_seconds()
-            logger.warning(
-                "All %d Groq keys in cooldown. Soonest available in %.0fs (key %d)",
-                len(self._keys), max(0, wait_seconds), soonest_idx + 1,
-            )
-            return None  # Signal to try next provider
-
-    def mark_rate_limited(self, key: str) -> Optional[str]:
-        """
-        Mark a key as rate-limited and rotate to the next one.
-        
-        Returns the next available key, or None if all keys are cooling down.
-        """
+    def cooldown_remaining(self) -> Optional[float]:
+        """Seconds until the key is usable again (None if not cooling)."""
         with self._lock:
-            # Find which index this key is
-            try:
-                idx = self._keys.index(key)
-            except ValueError:
-                return self.get_current_key()
+            until = self._cooldowns.get(0)
+        if until is None:
+            return None
+        remaining = (until - datetime.now()).total_seconds()
+        return remaining if remaining > 0 else None
 
-            # Put this key on cooldown
-            self._cooldowns[idx] = datetime.now() + timedelta(
-                seconds=self.KEY_COOLDOWN_SECONDS
-            )
-            logger.info(
-                "Groq key %d/%d hit rate limit → cooling down for %ds",
-                idx + 1, len(self._keys), self.KEY_COOLDOWN_SECONDS,
-            )
-
-            # Move to next key
-            self._current_index = (idx + 1) % len(self._keys)
-
+    def mark_rate_limited(self, key: Optional[str] = None, seconds: Optional[float] = None) -> Optional[str]:
+        """Put the Groq key in cooldown. Returns the key if still usable (never, now)."""
+        if not self._keys:
+            return None
+        if key is not None and key not in self._keys:
+            return self.get_current_key()
+        duration = seconds if seconds is not None else _cooldown_with_jitter(self.KEY_COOLDOWN_SECONDS)
+        with self._lock:
+            self._cooldowns[0] = datetime.now() + timedelta(seconds=duration)
+        logger.info("Groq provider hit rate limit → cooling down for %.0fs", duration)
         return self.get_current_key()
 
     def get_all_available_keys(self) -> list[str]:
-        """Get all keys not currently in cooldown (for provider expansion)."""
-        now = datetime.now()
+        key = self.get_current_key()
+        return [key] if key else []
+
+
+class _ProviderCooldowns:
+    """Cooldowns for non-Groq providers (Gemini, Ollama, ...)."""
+
+    def __init__(self) -> None:
+        self._until: dict[str, datetime] = {}
+        self._lock = threading.Lock()
+
+    def cool(self, provider: str, seconds: float) -> None:
         with self._lock:
-            return [
-                self._keys[i]
-                for i in range(len(self._keys))
-                if self._cooldowns.get(i) is None or now >= self._cooldowns[i]
-            ]
+            self._until[provider] = datetime.now() + timedelta(seconds=seconds)
+
+    def remaining(self, provider: str) -> Optional[float]:
+        with self._lock:
+            until = self._until.get(provider)
+        if until is None:
+            return None
+        rem = (until - datetime.now()).total_seconds()
+        return rem if rem > 0 else None
+
+    def reset(self) -> None:
+        with self._lock:
+            self._until.clear()
 
 
-# Singleton
 _groq_keys = GroqKeyManager()
+_cooldowns = _ProviderCooldowns()
 
 
 # ── Provider configuration ──────────────────────────────────────────────────────
-# Each entry: (litellm_model_string, api_key_env_var, max_tokens_default)
-# Order within a tier = failover order.
+# Order within a tier = failover order.  Model IDs are env-overridable.
 
+_GEMINI_FLASH = os.getenv("ARTHA_GEMINI_MODEL", "gemini/gemini-3.6-flash")
+_GROQ_SMALL = os.getenv("ARTHA_GROQ_SMALL_MODEL", "groq/openai/gpt-oss-20b")
+_GROQ_LARGE = os.getenv("ARTHA_GROQ_LARGE_MODEL", "groq/openai/gpt-oss-120b")
+
+# gpt-oss models on Groq are reasoning models: hidden reasoning tokens count
+# against max_tokens, so with default effort the answer can be cut off
+# mid-sentence (observed live: a writer report ended at "- FY 2025: **16").
+# Raising max_tokens is not an option on the free tier — Groq counts the
+# requested completion budget against an 8k tokens-per-minute limit (observed:
+# "Limit 8000, Requested 11349").  Narration needs little reasoning, so
+# reasoning effort is set low instead.
+_GPT_OSS_EXTRA = {"reasoning_effort": "low"}
 _PROVIDER_CHAINS: dict[ModelTier, list[dict]] = {
     ModelTier.CHEAP: [
-        {
-            "model": "gemini/gemini-3.6-flash",
-            "provider": "gemini",
-            "max_tokens": 2048,
-            "temperature": 0.1,
-        },
-        {
-            "model": "groq/llama3-8b-8192",
-            "provider": "groq",
-            "max_tokens": 2048,
-            "temperature": 0.1,
-        },
+        {"model": _GEMINI_FLASH, "provider": "gemini", "max_tokens": 2048, "temperature": 0.1},
+        {"model": _GROQ_SMALL, "provider": "groq", "max_tokens": 4096, "temperature": 0.1,
+         "extra": _GPT_OSS_EXTRA},
     ],
     ModelTier.MID: [
-        {
-            "model": "gemini/gemini-3.6-flash",
-            "provider": "gemini",
-            "max_tokens": 4096,
-            "temperature": 0.1,
-        },
-        {
-            "model": "groq/llama-3.3-70b-versatile",
-            "provider": "groq",
-            "max_tokens": 2048,
-            "temperature": 0.1,
-        },
+        # Groq first so a cheap-tier Gemini 429 doesn't immediately hit the
+        # same Gemini quota again when callers escalate cheap → mid.
+        {"model": _GROQ_LARGE, "provider": "groq", "max_tokens": 4096, "temperature": 0.1,
+         "extra": _GPT_OSS_EXTRA},
+        {"model": _GEMINI_FLASH, "provider": "gemini", "max_tokens": 4096, "temperature": 0.1},
     ],
     ModelTier.DEEP: [
-        {
-            "model": "groq/llama-3.3-70b-versatile",
-            "provider": "groq",
-            "max_tokens": 4096,
-            "temperature": 0.2,
-        },
-        {
-            "model": "gemini/gemini-3.6-flash",
-            "provider": "gemini",
-            "max_tokens": 8192,
-            "temperature": 0.2,
-        },
+        {"model": _GROQ_LARGE, "provider": "groq", "max_tokens": 4096, "temperature": 0.2,
+         "extra": _GPT_OSS_EXTRA},
+        {"model": _GEMINI_FLASH, "provider": "gemini", "max_tokens": 8192, "temperature": 0.2},
     ],
 }
 
-# ── Backoff configuration ───────────────────────────────────────────────────────
+_OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+_OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "ollama/llama3.1:8b")
+_OLLAMA_CONFIG = {
+    "model": _OLLAMA_MODEL,
+    "provider": "ollama",
+    "max_tokens": 2048,
+    "temperature": 0.1,
+    "base_url": _OLLAMA_BASE_URL,
+}
 
-_MAX_RETRIES = 5
+# ── Retry configuration ─────────────────────────────────────────────────────────
+
+_MAX_PASSES = 2
 _BASE_BACKOFF_S = 2.0
 _MAX_BACKOFF_S = 60.0
+_REQUEST_TIMEOUT_S = 180
+
+
+def _max_wait_seconds() -> float:
+    try:
+        return float(os.getenv("LLM_MAX_WAIT_SECONDS", "70"))
+    except ValueError:
+        return 70.0
 
 
 def _jittered_backoff(attempt: int) -> float:
@@ -214,182 +252,339 @@ def _jittered_backoff(attempt: int) -> float:
     return random.uniform(0, cap)
 
 
-# ── Key resolver ────────────────────────────────────────────────────────────────
-
-def _get_api_key(provider: str) -> Optional[str]:
-    """
-    Resolve an API key for a provider.
-    For Groq: uses the key manager (per-key rotation).
-    For Gemini: reads GEMINI_API_KEY directly.
-    """
-    if provider == "groq":
-        return _groq_keys.get_current_key()
-    elif provider == "gemini":
-        key = os.getenv("GEMINI_API_KEY", "").strip()
-        return key if key else None
-    return None
+# Indirection so tests can avoid real sleeping.
+_sleep: Callable[[float], None] = time.sleep
 
 
-# ── Public API ──────────────────────────────────────────────────────────────────
+# ── Error classification ───────────────────────────────────────────────────────
 
-
-def get_llm(tier: ModelTier = ModelTier.CHEAP):
-    """
-    Build and return a CrewAI-compatible LLM instance for the given tier.
-
-    For Groq providers: tries each comma-separated key individually.
-    When a key 429s, the GroqKeyManager rotates to the next key.
-    Only after all Groq keys are exhausted does it failover to Gemini.
-
-    Parameters
-    ----------
-    tier : ModelTier
-        Which capability tier to use.
-
-    Returns
-    -------
-    crewai.LLM
-        A configured LLM instance.
-    """
-    from crewai import LLM
-
-    chain = _PROVIDER_CHAINS.get(tier, _PROVIDER_CHAINS[ModelTier.CHEAP])
-
-    for provider_config in chain:
-        provider = provider_config["provider"]
-        model = provider_config["model"]
-
-        if provider == "groq":
-            # Try each available Groq key
-            available_keys = _groq_keys.get_all_available_keys()
-            if not available_keys:
-                logger.info(
-                    "All Groq keys in cooldown for tier=%s, trying next provider",
-                    tier.value,
-                )
-                continue
-
-            for key in available_keys:
-                try:
-                    llm = LLM(
-                        model=model,
-                        api_key=key,
-                        max_tokens=provider_config["max_tokens"],
-                        temperature=provider_config["temperature"],
-                        num_retries=2,  # Low retries per key — rotate instead
-                        timeout=180,
-                    )
-                    key_idx = _groq_keys._keys.index(key) + 1
-                    logger.info(
-                        "LLM tier=%s using %s (Groq key %d/%d)",
-                        tier.value, model, key_idx, _groq_keys.key_count,
-                    )
-                    return llm
-                except Exception as e:
-                    err_str = str(e).lower()
-                    if "rate" in err_str or "429" in err_str or "limit" in err_str:
-                        _groq_keys.mark_rate_limited(key)
-                        continue
-                    logger.warning(
-                        "Failed to construct LLM %s (key %d): %s",
-                        model, _groq_keys._keys.index(key) + 1, e,
-                    )
-                    continue
-        else:
-            # Non-Groq provider (Gemini)
-            api_key = _get_api_key(provider)
-            if not api_key:
-                logger.debug("No key for %s, skipping", provider)
-                continue
-
-            try:
-                llm = LLM(
-                    model=model,
-                    api_key=api_key,
-                    max_tokens=provider_config["max_tokens"],
-                    temperature=provider_config["temperature"],
-                    num_retries=_MAX_RETRIES,
-                    timeout=180,
-                )
-                logger.info(
-                    "LLM tier=%s using %s (Gemini)", tier.value, model
-                )
-                return llm
-            except Exception as e:
-                logger.warning(
-                    "Failed to construct LLM %s for tier %s: %s",
-                    model, tier.value, e,
-                )
-                continue
-
-    # Last resort: try Ollama local if available
+def is_rate_limit_error(exc: BaseException) -> bool:
+    """True if `exc` is a provider rate-limit / quota (HTTP 429) error."""
     try:
-        llm = LLM(
-            model="ollama/llama3.1:8b",
-            base_url="http://localhost:11434",
-            max_tokens=2048,
-            temperature=0.1,
-            num_retries=3,
-            timeout=120,
-        )
-        logger.info("LLM tier=%s falling back to local Ollama", tier.value)
-        return llm
-    except Exception:
-        pass
+        import litellm
 
-    raise RuntimeError(
-        f"No LLM provider available for tier '{tier.value}'. "
-        f"Set at least one of GROQ_API_KEY or GEMINI_API_KEY in .env."
+        if isinstance(exc, litellm.RateLimitError):
+            return True
+    except Exception:  # pragma: no cover - litellm is a hard dependency
+        pass
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status == 429:
+        return True
+    text = str(exc).lower()
+    return any(
+        marker in text
+        for marker in ("429", "rate limit", "ratelimit", "rate_limit", "resource_exhausted", "too many requests")
     )
 
 
-def mark_key_exhausted(api_key: str):
+_MAX_COOLDOWN_S = 24 * 3600
+# Providers put the real wait in the error text, e.g.
+#   Gemini: "Please retry in 20h14m29.11s"  /  "retryDelay": "73s"
+#   Groq:   "Please try again in 1m30.5s"
+# A daily-quota 429 must cool the provider for hours, not 65 seconds —
+# otherwise every call re-hits an exhausted quota (observed live with the
+# Gemini free tier's 20 requests/day limit).
+_RETRY_HINT_RE = re.compile(
+    r"(?:retry|try again)\s+in\s+((?:\d+(?:\.\d+)?\s*[hms]\s*)+)"
+    r"|retryDelay\W+(\d+(?:\.\d+)?)s",
+    re.IGNORECASE,
+)
+_DURATION_PART_RE = re.compile(r"(\d+(?:\.\d+)?)\s*([hms])", re.IGNORECASE)
+
+
+def _retry_after_seconds(exc: BaseException) -> Optional[float]:
+    """Provider-stated wait: Retry-After header, else a hint in the message."""
+    seconds: Optional[float] = None
+    headers = getattr(getattr(exc, "response", None), "headers", None)
+    if headers:
+        try:
+            value = headers.get("retry-after") or headers.get("Retry-After")
+            if value is not None:
+                seconds = float(value)
+        except (TypeError, ValueError, AttributeError):
+            seconds = None
+    if seconds is None:
+        match = _RETRY_HINT_RE.search(str(exc))
+        if match:
+            if match.group(1):
+                unit = {"h": 3600.0, "m": 60.0, "s": 1.0}
+                seconds = sum(
+                    float(n) * unit[u.lower()] for n, u in _DURATION_PART_RE.findall(match.group(1))
+                )
+            else:
+                seconds = float(match.group(2))
+    if seconds is None or seconds <= 0:
+        return None
+    return min(seconds, _MAX_COOLDOWN_S)
+
+
+# ── Provider availability ──────────────────────────────────────────────────────
+
+def _get_api_key(provider: str) -> Optional[str]:
+    """Resolve an API key for a provider (None if missing or cooling down)."""
+    if provider == "groq":
+        return _groq_keys.get_current_key()
+    if provider == "gemini":
+        if _cooldowns.remaining("gemini"):
+            return None
+        key = os.getenv("GEMINI_API_KEY", "").strip()
+        return key or None
+    return None
+
+
+_ollama_probe_lock = threading.Lock()
+_ollama_probe: dict[str, Any] = {"checked_at": 0.0, "ok": False}
+_OLLAMA_PROBE_TTL_S = 30.0
+
+
+def _ollama_reachable() -> bool:
+    """Cheap cached probe; an unreachable Ollama must not count as a provider."""
+    if os.getenv("ARTHA_DISABLE_OLLAMA", "").lower() in ("1", "true", "yes"):
+        return False
+    now = time.monotonic()
+    with _ollama_probe_lock:
+        if now - _ollama_probe["checked_at"] < _OLLAMA_PROBE_TTL_S:
+            return bool(_ollama_probe["ok"])
+    ok = False
+    try:
+        import httpx
+
+        ok = httpx.get(f"{_OLLAMA_BASE_URL}/api/tags", timeout=0.5).status_code == 200
+    except Exception:
+        ok = False
+    with _ollama_probe_lock:
+        _ollama_probe.update(checked_at=now, ok=ok)
+    return ok
+
+
+def mark_provider_rate_limited(
+    provider: str,
+    api_key: Optional[str] = None,
+    seconds: Optional[float] = None,
+) -> None:
+    """Put a provider in cooldown after a real 429."""
+    duration = seconds if seconds is not None else _cooldown_with_jitter(DEFAULT_COOLDOWN_SECONDS)
+    if provider == "groq":
+        _groq_keys.mark_rate_limited(api_key, seconds=duration)
+    else:
+        _cooldowns.cool(provider, duration)
+        logger.info("%s provider hit rate limit → cooling down for %.0fs", provider, duration)
+
+
+def _provider_cooldown_remaining(provider: str) -> Optional[float]:
+    if provider == "groq":
+        return _groq_keys.cooldown_remaining()
+    return _cooldowns.remaining(provider)
+
+
+def _provider_configured(provider: str) -> bool:
+    if provider == "groq":
+        return _groq_keys.key_count > 0
+    if provider == "gemini":
+        return bool(os.getenv("GEMINI_API_KEY", "").strip())
+    if provider == "ollama":
+        return _ollama_reachable()
+    return False
+
+
+@dataclass(frozen=True)
+class ProviderAttempt:
+    """One provider the router may try right now, with its resolved key."""
+
+    config: dict
+    api_key: Optional[str] = field(repr=False)
+    byok: bool = False
+
+    @property
+    def provider(self) -> str:
+        return self.config["provider"]
+
+    @property
+    def model(self) -> str:
+        return self.config["model"]
+
+
+def provider_attempts(tier: ModelTier, user_keys: Optional[UserKeys] = None) -> list[ProviderAttempt]:
     """
-    Call this when a runtime 429 occurs during an LLM call.
-    Rotates to the next Groq key for subsequent calls.
+    Providers in failover order that are configured and not cooling down.
+
+    With visitor keys (BYOK) only those keys are used — never the owner's
+    keys, the owner's cooldowns or the owner's local Ollama.  Without them,
+    owner keys are used unless the owner-key policy is ``off``.
     """
-    _groq_keys.mark_rate_limited(api_key)
+    chain = _PROVIDER_CHAINS.get(tier, _PROVIDER_CHAINS[ModelTier.CHEAP])
+    if user_keys is not None and user_keys.any:
+        return [ProviderAttempt(cfg, user_keys.get(cfg["provider"]), byok=True)
+                for cfg in chain if user_keys.get(cfg["provider"])]
+    attempts: list[ProviderAttempt] = []
+    if owner_keys_mode() != "off":
+        for cfg in chain:
+            key = _get_api_key(cfg["provider"])
+            if key:
+                attempts.append(ProviderAttempt(cfg, key))
+    if not _cooldowns.remaining("ollama") and _ollama_reachable():
+        attempts.append(ProviderAttempt(_OLLAMA_CONFIG, None))
+    return attempts
+
+
+def _soonest_cooldown(tier: ModelTier) -> Optional[float]:
+    """Seconds until the earliest configured provider in `tier` frees up."""
+    providers = {cfg["provider"] for cfg in _PROVIDER_CHAINS.get(tier, [])} | {"ollama"}
+    remaining = [
+        rem
+        for p in providers
+        if _provider_configured(p) and (rem := _provider_cooldown_remaining(p)) is not None
+    ]
+    return min(remaining) if remaining else None
+
+
+def _build_llm(attempt: ProviderAttempt):
+    """Construct a crewai LLM for one attempt. No network I/O happens here."""
+    from crewai import LLM
+
+    cfg = attempt.config
+    kwargs: dict[str, Any] = {
+        "model": cfg["model"],
+        "max_tokens": cfg["max_tokens"],
+        "temperature": cfg["temperature"],
+        # litellm's own retries would sit on a 429 instead of failing over.
+        "num_retries": 0,
+        "timeout": _REQUEST_TIMEOUT_S,
+    }
+    if attempt.api_key:
+        kwargs["api_key"] = attempt.api_key
+    if cfg.get("base_url"):
+        kwargs["base_url"] = cfg["base_url"]
+    # Only apply model-specific extras to the model they were written for
+    # (an env override to a non-reasoning model must not get reasoning_effort).
+    if "gpt-oss" in cfg["model"]:
+        kwargs.update(cfg.get("extra", {}))
+    return LLM(**kwargs)
+
+
+# ── Public LLM wrapper ─────────────────────────────────────────────────────────
+
+@dataclass
+class FailoverLLM:
+    """
+    Tier-bound LLM handle whose `.call()` fails over across providers.
+
+    Exposes `model`, `temperature`, `max_tokens` (of the primary provider) so
+    code that only inspects those attributes keeps working.
+    """
+
+    tier: ModelTier
+    max_passes: int = _MAX_PASSES
+    max_wait_seconds: Optional[float] = None
+    # Visitor keys captured when the handle is created (inside the job), so
+    # they still apply if a framework calls the LLM from another thread.
+    user_keys: Optional[UserKeys] = field(default=None, repr=False)
+    last_model: Optional[str] = field(default=None, init=False)
+
+    @property
+    def _primary(self) -> dict:
+        return _PROVIDER_CHAINS.get(self.tier, _PROVIDER_CHAINS[ModelTier.CHEAP])[0]
+
+    @property
+    def model(self) -> str:
+        return self.last_model or self._primary["model"]
+
+    @property
+    def temperature(self) -> float:
+        return self._primary["temperature"]
+
+    @property
+    def max_tokens(self) -> int:
+        return self._primary["max_tokens"]
+
+    def call(self, messages: Any, *args: Any, **kwargs: Any) -> Any:
+        """Call the first healthy provider; fail over on errors."""
+        max_wait = self.max_wait_seconds if self.max_wait_seconds is not None else _max_wait_seconds()
+        errors: list[tuple[str, Exception]] = []
+
+        for pass_idx in range(max(1, self.max_passes)):
+            attempts = provider_attempts(self.tier, self.user_keys)
+            if not attempts:
+                if self.user_keys is not None and self.user_keys.any:
+                    break   # a visitor's own key never waits on the owner's cooldowns
+                wait = _soonest_cooldown(self.tier)
+                last_pass = pass_idx == self.max_passes - 1
+                if wait is None or wait > max_wait or last_pass:
+                    break
+                logger.info("All providers for tier=%s cooling down; waiting %.0fs", self.tier.value, wait)
+                _sleep(wait + random.uniform(0, 1.0))
+                continue
+
+            saw_rate_limit = False
+            for attempt in attempts:
+                try:
+                    llm = _build_llm(attempt)
+                    result = llm.call(messages, *args, **kwargs)
+                    self.last_model = attempt.model
+                    logger.info("LLM tier=%s answered by %s", self.tier.value, attempt.model)
+                    return result
+                except Exception as exc:  # noqa: BLE001 - classify, then fail over
+                    text = str(exc)
+                    clean = redact(text, self.user_keys)
+                    # Provider errors can echo the key; keep the original exception only if it doesn't.
+                    safe = exc if clean == text else RuntimeError(f"{type(exc).__name__}: {clean}")
+                    errors.append((attempt.model, safe))
+                    if is_rate_limit_error(exc):
+                        saw_rate_limit = True
+                        if not attempt.byok:   # a visitor's 429 must not cool the owner's account
+                            mark_provider_rate_limited(
+                                attempt.provider, attempt.api_key, _retry_after_seconds(exc)
+                            )
+                        logger.warning("Rate limited on %s; failing over", attempt.model)
+                    else:
+                        logger.warning("LLM %s failed (%s); failing over", attempt.model, safe)
+
+            if not saw_rate_limit:
+                # Auth/model/connection errors won't fix themselves by waiting.
+                break
+            if pass_idx < self.max_passes - 1:
+                _sleep(_jittered_backoff(pass_idx))
+
+        raise AllProvidersFailedError(self.tier, errors)
+
+
+def get_llm(tier: ModelTier = ModelTier.CHEAP) -> FailoverLLM:
+    """Return a failover-capable LLM handle for `tier` (no network I/O)."""
+    return FailoverLLM(tier=tier, user_keys=current_keys())
+
+
+def mark_key_exhausted(api_key: str) -> None:
+    """Backwards-compatible: cool down the Groq provider after a runtime 429."""
+    mark_provider_rate_limited("groq", api_key)
 
 
 def get_key_status() -> dict:
-    """Get current status of all Groq keys (for debugging/monitoring)."""
-    now = datetime.now()
-    statuses = []
-    for i, key in enumerate(_groq_keys._keys):
-        cooldown = _groq_keys._cooldowns.get(i)
-        if cooldown and now < cooldown:
-            remaining = (cooldown - now).total_seconds()
-            statuses.append({
-                "key_index": i + 1,
-                "key_prefix": key[:8] + "…",
-                "status": "cooling_down",
-                "available_in_seconds": round(remaining),
-            })
-        else:
-            statuses.append({
-                "key_index": i + 1,
-                "key_prefix": key[:8] + "…",
-                "status": "available",
-            })
-    return {
-        "total_keys": len(_groq_keys._keys),
-        "current_index": _groq_keys._current_index + 1,
-        "keys": statuses,
-    }
+    """Provider cooldown status for debugging/monitoring (no secrets)."""
+    statuses = {}
+    for provider in ("groq", "gemini", "ollama"):
+        rem = _provider_cooldown_remaining(provider)
+        statuses[provider] = {
+            "configured": _provider_configured(provider),
+            "status": "cooling_down" if rem else "available",
+            **({"available_in_seconds": round(rem)} if rem else {}),
+        }
+    return {"providers": statuses}
 
 
 # ── Convenience functions ──────────────────────────────────────────────────────
 
-def get_cheap_llm():
-    """Convenience: get a cheap-tier LLM (Orchestrator, Fundamentals, etc.)."""
+def get_cheap_llm() -> FailoverLLM:
+    """Cheap tier (Orchestrator, Fundamentals, Quant Narrator, Sentiment)."""
     return get_llm(ModelTier.CHEAP)
 
 
-def get_mid_llm():
-    """Convenience: get a mid-tier LLM (Risk Agent)."""
+def get_mid_llm() -> FailoverLLM:
+    """Mid tier (Risk Agent)."""
     return get_llm(ModelTier.MID)
 
 
-def get_deep_llm():
-    """Convenience: get a deep-tier LLM (Writer Agent — final synthesis only)."""
+def get_deep_llm() -> FailoverLLM:
+    """Deep tier (Writer Agent — final synthesis only)."""
     return get_llm(ModelTier.DEEP)

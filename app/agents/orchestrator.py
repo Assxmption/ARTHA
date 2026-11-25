@@ -1,59 +1,45 @@
 """
-Orchestrator Agent
-==================
-Decomposes a user query into which data slices, fact types, and
-risk checks are needed.  Writes a task plan to the Fact Store.
+Orchestrator Agent — Thin redirect to AnalysisCrew
+====================================================
+The original orchestrator stub used a single CrewAI Agent.  The real
+pipeline now lives in ``app.crew.analysis_crew.AnalysisCrew``, which
+orchestrates Fact Store–centric stages without sequential context-stacking.
 
-Uses cheap model (AGENTS.md rule 3 — retrieval/classification
-doesn't need the expensive model).
+This module is kept for backward-compatibility only.  New code should import
+``AnalysisCrew`` directly from ``app.crew.analysis_crew``.
 
-Reference: docs/ARTHA_ARCHITECTURE.md §4.5 (Orchestrator/Planner row)
+Reference: docs/ARTHA_ARCHITECTURE.md §4.5, §4.6
 """
 
 from __future__ import annotations
 
-from crewai import Agent
+import logging
+import warnings
 
-from app.llm.router import get_cheap_llm
+# Re-export the real orchestrator so callers that do
+# ``from app.agents.orchestrator import AnalysisCrew`` still work.
+from app.crew.analysis_crew import AnalysisCrew  # noqa: F401
+
+logger = logging.getLogger(__name__)
 
 
-def create_orchestrator_agent() -> Agent:
+def create_orchestrator_agent():
     """
-    Create the ARTHA Orchestrator agent.
+    **Deprecated** — use ``AnalysisCrew()`` directly.
 
-    The Orchestrator analyses the user's query and produces a structured
-    task plan specifying:
-      - Which symbols / sectors to analyse
-      - Which fiscal years to cover
-      - Which fact types to collect (fundamentals, quant signals, news)
-      - What risk checks to run
-
-    It does NOT do any analysis itself — it only plans.
+    Returns an ``AnalysisCrew`` instance for backward-compatibility.
+    The old CrewAI ``Agent`` wrapper has been removed because the
+    system now uses direct Python orchestration through the Fact Store
+    (AGENTS.md rule 2 — no sequential prompt-stacking).
     """
-    llm = get_cheap_llm()
-
-    return Agent(
-        role="ARTHA Orchestrator",
-        goal=(
-            "Analyse the user's Indian markets / commodities query and produce "
-            "a structured task plan. Identify: (1) which NSE symbols or MCX "
-            "commodities to analyse, (2) which fiscal years to cover, "
-            "(3) which fact types to collect (fundamentals, quant signals, "
-            "sentiment), and (4) what risk checks are needed. "
-            "Output a clear, machine-parseable plan — not a narrative essay."
-        ),
-        backstory=(
-            "You are a financial research operations coordinator specialising "
-            "in Indian equities (NSE) and commodities (MCX). You understand "
-            "the ARTHA system's capabilities: row-level fundamentals analysis, "
-            "quantitative signal generation (regime detection, statistical "
-            "arbitrage), and FinBERT-based news sentiment. Your job is to "
-            "decompose any query into the specific data retrieval and analysis "
-            "steps the downstream agents need to execute. You never analyse "
-            "data yourself — you plan what others should do."
-        ),
-        llm=llm,
-        verbose=True,
-        allow_delegation=False,
-        max_iter=5,
+    warnings.warn(
+        "create_orchestrator_agent() is deprecated. "
+        "Use AnalysisCrew() directly — see docs/ARTHA_ARCHITECTURE.md §4.5.",
+        DeprecationWarning,
+        stacklevel=2,
     )
+    logger.info(
+        "create_orchestrator_agent() called — returning AnalysisCrew instance. "
+        "Please migrate to importing AnalysisCrew directly."
+    )
+    return AnalysisCrew()

@@ -11,9 +11,11 @@ import NewsSentiment from './pages/NewsSentiment';
 import Simulator from './pages/Simulator';
 import PaperTrading from './pages/PaperTrading';
 import Screener from './pages/Screener';
+import Settings from './pages/Settings';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { getActiveSymbol } from './lib/activeSymbol';
 import { ThemeProvider } from './contexts/ThemeContext';
 
 // Protected Route Wrapper
@@ -79,7 +81,7 @@ const AppRoutes = () => {
         </ProtectedRoute>
       } />
       
-      <Route path="/dashboard" element={<Navigate to="/dashboard/RELIANCE" replace />} />
+      <Route path="/dashboard" element={<Navigate to={`/dashboard/${getActiveSymbol()}`} replace />} />
       <Route path="/dashboard/:symbol" element={
         <ProtectedRoute>
           <Shell><Dashboard /></Shell>
@@ -116,6 +118,20 @@ const AppRoutes = () => {
       <Route path="/paper-trading" element={
         <ProtectedRoute>
           <Shell><PaperTrading /></Shell>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/settings" element={
+        <ProtectedRoute>
+          <Shell><Settings /></Shell>
+        </ProtectedRoute>
+      } />
+
+      {/* Supabase password-recovery links land here signed in; send them to the
+          password form. */}
+      <Route path="/reset-password" element={
+        <ProtectedRoute>
+          <Navigate to="/settings?recovery=1#account" replace />
         </ProtectedRoute>
       } />
 

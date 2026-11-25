@@ -233,16 +233,19 @@ def validate_signals_walkforward(
         returns = prices.pct_change().dropna()
         metrics = compute_metrics(returns)
 
-        # A signal is validated only if the underlying data
-        # has sufficient quality for meaningful analysis
-        signal["validated"] = (
-            metrics.num_trading_days >= 504  # ~2 years
-            and metrics.max_drawdown <= 0.50  # Not a total blowup
+        # This function sees an asset return series, not the strategy's
+        # generated positions.  It is therefore a data-quality diagnostic only
+        # and must never clear the production validation gate.  Strategy-level
+        # walk-forward validation belongs to app.quant.backtest.
+        signal["validated"] = False
+        signal["metadata"]["asset_data_diagnostic"] = {
+            "trading_days": metrics.num_trading_days,
+            "sharpe": metrics.sharpe_ratio,
+            "max_drawdown": metrics.max_drawdown,
+        }
+        signal["metadata"]["validation_status"] = (
+            "requires_strategy_level_walk_forward"
         )
-
-        if signal["validated"]:
-            signal["metadata"]["oos_sharpe"] = metrics.sharpe_ratio
-            signal["metadata"]["oos_max_dd"] = metrics.max_drawdown
 
     validated = sum(1 for s in signals if s["validated"])
     logger.info(

@@ -1,0 +1,161 @@
+{
+  "schema_version": "mcx_contract_master_v1",
+  "description": "MCX commodity futures contract specifications. Lot sizes, tick sizes, and quote units are from MCX official circular data. This master covers major energy, bullion, and base metal contracts traded on MCX India.",
+  "last_updated": "2026-11-21",
+  "contracts": [
+    {
+      "commodity": "CRUDEOIL",
+      "instrument": "FUTCOM",
+      "lot_size": 100,
+      "tick_size": 1.0,
+      "quote_unit": "BBL",
+      "currency": "INR",
+      "expiry_rule": "19th of every month or previous trading day"
+    },
+    {
+      "commodity": "CRUDEOILM",
+      "instrument": "FUTCOM",
+      "lot_size": 10,
+      "tick_size": 1.0,
+      "quote_unit": "BBL",
+      "currency": "INR",
+      "expiry_rule": "19th of every month or previous trading day"
+    },
+    {
+      "commodity": "GOLD",
+      "instrument": "FUTCOM",
+      "lot_size": 1000,
+      "tick_size": 1.0,
+      "quote_unit": "GMS",
+      "currency": "INR",
+      "expiry_rule": "5th of contract month or previous trading day"
+    },
+    {
+      "commodity": "GOLDM",
+      "instrument": "FUTCOM",
+      "lot_size": 100,
+      "tick_size": 1.0,
+      "quote_unit": "GMS",
+      "currency": "INR",
+      "expiry_rule": "5th of contract month or previous trading day"
+    },
+    {
+      "commodity": "GOLDPETAL",
+      "instrument": "FUTCOM",
+      "lot_size": 1,
+      "tick_size": 1.0,
+      "quote_unit": "GMS",
+      "currency": "INR",
+      "expiry_rule": "Last day of contract month or previous trading day"
+    },
+    {
+      "commodity": "GOLDGUINEA",
+      "instrument": "FUTCOM",
+      "lot_size": 8,
+      "tick_size": 1.0,
+      "quote_unit": "GMS",
+      "currency": "INR",
+      "expiry_rule": "Last day of contract month or previous trading day"
+    },
+    {
+      "commodity": "SILVER",
+      "instrument": "FUTCOM",
+      "lot_size": 30000,
+      "tick_size": 1.0,
+      "quote_unit": "GMS",
+      "currency": "INR",
+      "expiry_rule": "5th of contract month or previous trading day"
+    },
+    {
+      "commodity": "SILVERM",
+      "instrument": "FUTCOM",
+      "lot_size": 5000,
+      "tick_size": 1.0,
+      "quote_unit": "GMS",
+      "currency": "INR",
+      "expiry_rule": "Last day of contract month or previous trading day"
+    },
+    {
+      "commodity": "SILVERMIC",
+      "instrument": "FUTCOM",
+      "lot_size": 1000,
+      "tick_size": 1.0,
+      "quote_unit": "GMS",
+      "currency": "INR",
+      "expiry_rule": "Last day of contract month or previous trading day"
+    },
+    {
+      "commodity": "NATURALGAS",
+      "instrument": "FUTCOM",
+      "lot_size": 1250,
+      "tick_size": 0.10,
+      "quote_unit": "MMBTU",
+      "currency": "INR",
+      "expiry_rule": "25th of month preceding contract month or previous trading day"
+    },
+    {
+      "commodity": "COPPER",
+      "instrument": "FUTCOM",
+      "lot_size": 2500,
+      "tick_size": 0.05,
+      "quote_unit": "KGS",
+      "currency": "INR",
+      "expiry_rule": "Last day of contract month or previous trading day"
+    },
+    {
+      "commodity": "ZINC",
+      "instrument": "FUTCOM",
+      "lot_size": 5000,
+      "tick_size": 0.05,
+      "quote_unit": "KGS",
+      "currency": "INR",
+      "expiry_rule": "Last day of contract month or previous trading day"
+    },
+    {
+      "commodity": "LEAD",
+      "instrument": "FUTCOM",
+      "lot_size": 5000,
+      "tick_size": 0.05,
+      "quote_unit": "KGS",
+      "currency": "INR",
+      "expiry_rule": "Last day of contract month or previous trading day"
+    },
+    {
+      "commodity": "NICKEL",
+      "instrument": "FUTCOM",
+      "lot_size": 1500,
+      "tick_size": 0.20,
+      "quote_unit": "KGS",
+      "currency": "INR",
+      "expiry_rule": "Last day of contract month or previous trading day"
+    },
+    {
+      "commodity": "ALUMINIUM",
+      "instrument": "FUTCOM",
+      "lot_size": 5000,
+      "tick_size": 0.05,
+      "quote_unit": "KGS",
+      "currency": "INR",
+      "expiry_rule": "Last day of contract month or previous trading day"
+    },
+    {
+      "commodity": "MENTHAOIL",
+      "instrument": "FUTCOM",
+      "lot_size": 360,
+      "tick_size": 0.10,
+      "quote_unit": "KGS",
+      "currency": "INR",
+      "expiry_rule": "Last day of contract month or previous trading day"
+    },
+    {
+      "commodity": "COTTONCDY",
+      "instrument": "FUTCOM",
+      "lot_size": 25,
+      "tick_size": 10.0,
+      "quote_unit": "BALES",
+      "currency": "INR",
+      "expiry_rule": "Last day of contract month or previous trading day"
+    }
+  ]
+}
+

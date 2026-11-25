@@ -1,0 +1,1131 @@
+{
+  "train_start": "2014-08-09",
+  "train_end": "2024-08-08",
+  "test_start": "2024-08-09",
+  "test_end": "2026-08-21",
+  "universe_size": 82,
+  "universe_status": "survivorship_biased",
+  "source_files": [
+    {
+      "symbol": "ABB",
+      "path": "data_cache/ABB_v5.parquet",
+      "sha256": "2f601ff7e8cba1651daa288413e18d7be1ecf52dea003ac80f869cfa819ac05f",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "ADANIENT",
+      "path": "data_cache/ADANIENT_v5.parquet",
+      "sha256": "96c0499a4f900cd2bb098cab8d9f8e51871834f7fa9cbb84d0dcd6acb5c0f939",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "ADANIPORTS",
+      "path": "data_cache/ADANIPORTS_v5.parquet",
+      "sha256": "4b2dc02a4b62633851aafe8151e6c4f7d7fdce8e74d516c1d5dfdd33a395e5f1",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "AMBUJACEM",
+      "path": "data_cache/AMBUJACEM_v5.parquet",
+      "sha256": "bb70949d22cf2de0ad827170ce1f42d01d52b56b4a8433bb7510dfffb20423b6",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "APOLLOHOSP",
+      "path": "data_cache/APOLLOHOSP_v5.parquet",
+      "sha256": "dc7100fa44f4a633810d6150d458da11a1555cf505b67acc7cdbd3646d44108e",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "ASIANPAINT",
+      "path": "data_cache/ASIANPAINT_v5.parquet",
+      "sha256": "c524902e9365bbf855329e55f4eec46ebd5c4275c26c74aa02778fff167425d4",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "AXISBANK",
+      "path": "data_cache/AXISBANK_v5.parquet",
+      "sha256": "d4a48ca3755eaf765d13d87d848b189b521dc5a023bc33bdb8e858cf1f9b654e",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "BAJAJ-AUTO",
+      "path": "data_cache/BAJAJ-AUTO_v5.parquet",
+      "sha256": "fbcd683354e10ad2b387fca6c6ce853194172013a421b4c5d4ef06c7df5cf01a",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "BAJAJFINSV",
+      "path": "data_cache/BAJAJFINSV_v5.parquet",
+      "sha256": "081c3ab562331ffbc1fd8507402017c537cd5534028dee25100a4529f642d9d8",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "BAJAJHLDNG",
+      "path": "data_cache/BAJAJHLDNG_v5.parquet",
+      "sha256": "2bb5b305a324cc8f5ee8d7c0ccfff2f3bbc586b1697de5f0d1e0ab7d32b1dfa1",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "BAJAJ_AUTO",
+      "path": "data_cache/BAJAJ_AUTO_v5.parquet",
+      "sha256": "08c459e0839b1fe3aba4ba169fba57a405b4e3c7e9fa01e7f781930954c9fd64",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "BAJFINANCE",
+      "path": "data_cache/BAJFINANCE_v5.parquet",
+      "sha256": "0d28ba3c71f7877bf60211f29abc72ca989c483457d3abc6b1a7f93235abef2f",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "BANKBARODA",
+      "path": "data_cache/BANKBARODA_v5.parquet",
+      "sha256": "d6abe77c4001748ab3f6cd07fb155e75eeba475f5cb8e8437f5c4b4985457d97",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "BEL",
+      "path": "data_cache/BEL_v5.parquet",
+      "sha256": "b3ec31adb3cf9f350e62761337fb9942606e010f995398428204e30f741bef5c",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "BERGEPAINT",
+      "path": "data_cache/BERGEPAINT_v5.parquet",
+      "sha256": "29f29137ff5e4456389fc2c9c30a64d7d4e1fb373c4dd1289ed61bbe341aac77",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "BHARTIARTL",
+      "path": "data_cache/BHARTIARTL_v5.parquet",
+      "sha256": "4ed1491e26eb7bad8d52cf95de9eaa448fca5d9f9140f07d425c26512e0101e0",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "BOSCHLTD",
+      "path": "data_cache/BOSCHLTD_v5.parquet",
+      "sha256": "127d2b1731421eddaa60094a52706bdff67d4917ea7574459269d02e0f347cf8",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3120
+    },
+    {
+      "symbol": "BPCL",
+      "path": "data_cache/BPCL_v5.parquet",
+      "sha256": "b0b6b1e2bcd247fabeafbac9d46c53ac58219a5bd81d7078d72d9c226c11adb7",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "BRITANNIA",
+      "path": "data_cache/BRITANNIA_v5.parquet",
+      "sha256": "908a0bd32a8accf32c8963f18dff3979011b995ea62e1930fbc4ac88a8c3001f",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "CANBK",
+      "path": "data_cache/CANBK_v5.parquet",
+      "sha256": "0d9f02544fe4fdfcf4bbc0d427a53b56ee118fcdbcf3909b8b8c7ca161a6acac",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "CHOLAFIN",
+      "path": "data_cache/CHOLAFIN_v5.parquet",
+      "sha256": "e4e06fb2a42260019929f04a9f40c1cf4a5f6f9bd8e3a57609e67e81ec8390ce",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "CIPLA",
+      "path": "data_cache/CIPLA_v5.parquet",
+      "sha256": "c1640131e71981b84a17e95ba6c653a977140b65621a369a9735154bfcd30dc1",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "COALINDIA",
+      "path": "data_cache/COALINDIA_v5.parquet",
+      "sha256": "8a8e714a47bc3d3269ae11c69b77a57a571bd120706bec0c9b0fb2bc6b6addfb",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "COLPAL",
+      "path": "data_cache/COLPAL_v5.parquet",
+      "sha256": "677a5e5c0b2ed8b61ef8d18acac3bce16242daca4e6764147e5260f828a39d68",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "DABUR",
+      "path": "data_cache/DABUR_v5.parquet",
+      "sha256": "d26a0158489e4fa6ec180b58c6f8f4c9564e01df40028e8481e8216b9c7b41f1",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "DIVISLAB",
+      "path": "data_cache/DIVISLAB_v5.parquet",
+      "sha256": "1b9d6e3e9bab790c6427d8389a32e6ef3a52e780e82cfd76023fdf7f7845b1c0",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3120
+    },
+    {
+      "symbol": "DLF",
+      "path": "data_cache/DLF_v5.parquet",
+      "sha256": "e51ee3e486b22c8fef24ec1dc5f67563e22a6d41d60c8c8d7e3290d242d88b8a",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "DRREDDY",
+      "path": "data_cache/DRREDDY_v5.parquet",
+      "sha256": "80479545d040386a886aa22b22125a9d66fa70cfc883cf89011640a4235d8a56",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "EICHERMOT",
+      "path": "data_cache/EICHERMOT_v5.parquet",
+      "sha256": "6cc5e210bed351c36007b1b38e7a36c673d5b99abf3934e610bed138b7c279e3",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "GODREJCP",
+      "path": "data_cache/GODREJCP_v5.parquet",
+      "sha256": "95a98fe29bfe811c3228ca54cbe53d4ae740120e27386543a27a97278180de08",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "GRASIM",
+      "path": "data_cache/GRASIM_v5.parquet",
+      "sha256": "74f781860c7526cafc675cf6486d8bc454648054bb6a538c52f0cff3ac70f1c5",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "HAVELLS",
+      "path": "data_cache/HAVELLS_v5.parquet",
+      "sha256": "3d0242a4765be7cddea82a93f62fded5f1fa9854fcd1be9bdf92f1033c35266d",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "HCLTECH",
+      "path": "data_cache/HCLTECH_v5.parquet",
+      "sha256": "27b1e59d552eb97106d1149a2c973032d717d8aa9df08fb4623585e3d2c114a7",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "HDFCBANK",
+      "path": "data_cache/HDFCBANK_v5.parquet",
+      "sha256": "bd50dcd3dd10b84c46d80811d98cb3e1014ebe6904f71e689a213cf12b35b930",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "HEROMOTOCO",
+      "path": "data_cache/HEROMOTOCO_v5.parquet",
+      "sha256": "e55efa083346cd3046a9a62d33b3f87d687accb8a05604e90bb314aa6a6fbf6a",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "HINDALCO",
+      "path": "data_cache/HINDALCO_v5.parquet",
+      "sha256": "b0ac0e7c0b2a27f737bf0c730094bed1c8bc8f1e6ba40a4bb2c62ace0900c40b",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "HINDUNILVR",
+      "path": "data_cache/HINDUNILVR_v5.parquet",
+      "sha256": "04a50c5121da725de163f6c642d61eda4916e3d9a48f642d0e0845b8a20ba1ca",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "ICICIBANK",
+      "path": "data_cache/ICICIBANK_v5.parquet",
+      "sha256": "1582ce8f3d852f9e5c4907b043781ed8dcd932d4d62e979f8fffdae2f6bfff46",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "INDHOTEL",
+      "path": "data_cache/INDHOTEL_v5.parquet",
+      "sha256": "b6142a56c713eb81cae95f8dbd91e7fa24bc35c6c5582c47c3b93a71b74df6db",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "INDUSINDBK",
+      "path": "data_cache/INDUSINDBK_v5.parquet",
+      "sha256": "4987a419831b658aae327940f1190b1fcfadd73ac41087f80f343da0932621b9",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "INDUSTOWER",
+      "path": "data_cache/INDUSTOWER_v5.parquet",
+      "sha256": "00bf9d97630a4db28f2e5097896ac24858b35fe7e85d5edac5e0a81cc22f6a62",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "INFY",
+      "path": "data_cache/INFY_v5.parquet",
+      "sha256": "08e26df1b4b89404ace764f753abe14994715bd1644cf16eac95c9dd45f0b2d4",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "ITC",
+      "path": "data_cache/ITC_v5.parquet",
+      "sha256": "ed67e9709f6670e9e94f9fe60f528fb87f382198724a0b132de0ab2bccc2d4af",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "JINDALSTEL",
+      "path": "data_cache/JINDALSTEL_v5.parquet",
+      "sha256": "c9de3c9b2e9e5e5618623793224b7cc183525ee2d40a2a964c08c76655e01217",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "JSWSTEEL",
+      "path": "data_cache/JSWSTEEL_v5.parquet",
+      "sha256": "581acfbf10e1199c6b1e3f6ff427c874da56772723579b4f9e9882d4a7c94589",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "KOTAKBANK",
+      "path": "data_cache/KOTAKBANK_v5.parquet",
+      "sha256": "bf1d4515cd4d3ace3c4d4464386a8b3197ce8c0b59bcb43d13a440bcc85fa82c",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "LT",
+      "path": "data_cache/LT_v5.parquet",
+      "sha256": "78b2098563780dee1a66a6785f4365d241cc7384b05a110c43548322ff6e4fa9",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "M&M",
+      "path": "data_cache/M&M_v5.parquet",
+      "sha256": "8ff1bbc952a0c4070f71069d9433e7f3a723e6f5ff2ac66bcfb3ac6cf77aa51d",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "MARICO",
+      "path": "data_cache/MARICO_v5.parquet",
+      "sha256": "98935e410160a7fc8ba045db49acab7c16ff07b64945b3a71e254c37eb28de13",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "MARUTI",
+      "path": "data_cache/MARUTI_v5.parquet",
+      "sha256": "92097ded7aa60aa9c041b71e4a9d471d39a9bad5d6db270749915a7bb93510e9",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "NESTLEIND",
+      "path": "data_cache/NESTLEIND_v5.parquet",
+      "sha256": "92b4836c586af340bea15740117ade3ce4b9bbbda98f669fa188cbedeefb467a",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "NHPC",
+      "path": "data_cache/NHPC_v5.parquet",
+      "sha256": "9f6448b0614c64c39a8db6db03c39406c765483f454c104d11b6fcd54d47a1e9",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "NTPC",
+      "path": "data_cache/NTPC_v5.parquet",
+      "sha256": "4ec140fb6cea153b356302e51e3b420318a439319f997752cf176f050f3df75e",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "OBEROIRLTY",
+      "path": "data_cache/OBEROIRLTY_v5.parquet",
+      "sha256": "9525a38f126ccef576bf62427c9df511fe8b2d532b9cfc74db3f3a135e529cd6",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3120
+    },
+    {
+      "symbol": "ONGC",
+      "path": "data_cache/ONGC_v5.parquet",
+      "sha256": "0c90beb9e4ebab6f2a7a8dc203202a255f1f7e5ac101e5039107716d95936535",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "PAGEIND",
+      "path": "data_cache/PAGEIND_v5.parquet",
+      "sha256": "551af5f5766bfc6f9a42af07fdf106c80a6436fd594276e9e4ffc388a755598b",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3119
+    },
+    {
+      "symbol": "PFC",
+      "path": "data_cache/PFC_v5.parquet",
+      "sha256": "564b9e2568743f4e2f1756d39c0c2b01120723af24f6344276b894263a5a6a49",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "PIDILITIND",
+      "path": "data_cache/PIDILITIND_v5.parquet",
+      "sha256": "921d8ac709691ff5a0b8321332fffdd9b686f987cdf24ff6cc76336b63e93c00",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "PNB",
+      "path": "data_cache/PNB_v5.parquet",
+      "sha256": "a59487f5c17a79d3f94c3483708d9e1f6cd5180edebb5f29575d1fce4ad43f3e",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "POWERGRID",
+      "path": "data_cache/POWERGRID_v5.parquet",
+      "sha256": "85fba8f0e66b6944e24bc1bc0a4ae22f3a17a7074812f4f9c7e4cab450480f3c",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "RECLTD",
+      "path": "data_cache/RECLTD_v5.parquet",
+      "sha256": "b26ead476bb5def06768410f7b114f4ba45fce6a63234d122bffa1fc175001ad",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "RELIANCE",
+      "path": "data_cache/RELIANCE_v5.parquet",
+      "sha256": "92225a7b1fa8f8bfe8833d4168cb6759005af3d26cd65bbd4346e2e6a9300b8d",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "SAIL",
+      "path": "data_cache/SAIL_v5.parquet",
+      "sha256": "a850fb93c9b0596b7f46e64ff4e087fbc6a441179f1c8fb919eed7ad8b814732",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "SBIN",
+      "path": "data_cache/SBIN_v5.parquet",
+      "sha256": "db0a2811ad3a4c2b2110d84ac04b777d87d1b876681a001d139b8e932b3721dd",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "SHREECEM",
+      "path": "data_cache/SHREECEM_v5.parquet",
+      "sha256": "400a780d506f75b5f4e6a829d17713b45a866808e9d9952b1c941321a1be9021",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "SIEMENS",
+      "path": "data_cache/SIEMENS_v5.parquet",
+      "sha256": "8dec64f1efb181d7a8189344f39e0211fc29b190eb22510c1c79e30ddf5797c3",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3120
+    },
+    {
+      "symbol": "SRF",
+      "path": "data_cache/SRF_v5.parquet",
+      "sha256": "5c5383241e9baff7537f0d2f94a551316fa86c3a19628b3d977d707d09e9d9e9",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "SUNPHARMA",
+      "path": "data_cache/SUNPHARMA_v5.parquet",
+      "sha256": "449c2c3909a9c1303f1f30ef1c8052d4af6f25ad355614eaf2a9b8d0f841ed05",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "TATACOMM",
+      "path": "data_cache/TATACOMM_v5.parquet",
+      "sha256": "9ccdd83b8db725a40356f15db8acfb4d8261886d44efec6aed8c809e988a1865",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "TATAPOWER",
+      "path": "data_cache/TATAPOWER_v5.parquet",
+      "sha256": "05b22323538d20038fd89c75b8cca23a28595f37710bff1acdb9e11093f67ca5",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "TATASTEEL",
+      "path": "data_cache/TATASTEEL_v5.parquet",
+      "sha256": "46c7366c611272d86d4b785908f701b1a2eb6aeddfd9a542c3e6113eded567c8",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "TCS",
+      "path": "data_cache/TCS_v5.parquet",
+      "sha256": "b3d34bb0d801a5a4977c0fcac3ca0e3c88f262cd758f14f595397d2833ba7593",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "TECHM",
+      "path": "data_cache/TECHM_v5.parquet",
+      "sha256": "5b2451d62770ccae83a79abdac8aae6ead6e33ce2414b5d4713a0645f2728918",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "TITAN",
+      "path": "data_cache/TITAN_v5.parquet",
+      "sha256": "04379c92695bc4ccff75372652c496017590500781f1122246c1889f2eae55cb",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "TORNTPHARM",
+      "path": "data_cache/TORNTPHARM_v5.parquet",
+      "sha256": "96db80619280f1b8b83f5710a5e324fb75beed8dc8710be3b18818e69cc8bdb9",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "TRENT",
+      "path": "data_cache/TRENT_v5.parquet",
+      "sha256": "94eadda00d0dd999bd15df3049b2640d58d2b5c03ac6900303b4711bee892768",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "TVSMOTOR",
+      "path": "data_cache/TVSMOTOR_v5.parquet",
+      "sha256": "51a35446ef1ff0fe03887ca6251fc26efb6f1b3dc15aa25211506e94d2e6c9c2",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "ULTRACEMCO",
+      "path": "data_cache/ULTRACEMCO_v5.parquet",
+      "sha256": "b5f31ee9d5954d8176bf8708827f128a176454125895131bc9bf7ef56eacb3ff",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "UNIONBANK",
+      "path": "data_cache/UNIONBANK_v5.parquet",
+      "sha256": "41cde504f5deef2b557c78085776195e4838b842e7a0f675cf31a83575e9c755",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "VEDL",
+      "path": "data_cache/VEDL_v5.parquet",
+      "sha256": "65e8fed0905e0ee1826457892faecf5de130613028c44652f8a3a4de997cdf27",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "WIPRO",
+      "path": "data_cache/WIPRO_v5.parquet",
+      "sha256": "82f065c905758a2aa75e7efe916e325a5fd32c3904b3ebccd4a238f2fb69be47",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    },
+    {
+      "symbol": "ZYDUSLIFE",
+      "path": "data_cache/ZYDUSLIFE_v5.parquet",
+      "sha256": "4956f7ed6e3323d688e8a2352e30e244743d06b8f8429aba57c4c6f62417034e",
+      "first_date": "2014-01-01",
+      "last_date": "2026-08-21",
+      "rows": 3121
+    }
+  ],
+  "sleeves": {
+    "momentum_12m_skip_1m": {
+      "config": {
+        "name": "momentum_12m_skip_1m",
+        "lookback_days": 252,
+        "skip_days": 21,
+        "rebalance_days": 21,
+        "top_fraction": 0.2,
+        "long_only": true,
+        "reverse_rank": false,
+        "gross_exposure": 1.0
+      },
+      "training_metrics": {
+        "total_return": 5.972701,
+        "annualized_return": 0.220798,
+        "sharpe_ratio": 0.8066,
+        "sortino_ratio": 0.9516,
+        "max_drawdown": 0.346412,
+        "calmar_ratio": 0.6374,
+        "win_rate": 0.4794,
+        "num_trades": null,
+        "num_trading_days": 2453,
+        "volatility": 0.200398,
+        "avg_trade_return": 0.0008727,
+        "profit_factor": 1.243,
+        "is_valid": false,
+        "trade_count_available": false,
+        "return_observations": 2453
+      },
+      "test_metrics": {
+        "total_return": -0.161109,
+        "annualized_return": -0.08409,
+        "sharpe_ratio": -0.728,
+        "sortino_ratio": -0.9275,
+        "max_drawdown": 0.285154,
+        "calmar_ratio": -0.2949,
+        "win_rate": 0.502,
+        "num_trades": null,
+        "num_trading_days": 504,
+        "volatility": 0.178712,
+        "avg_trade_return": -0.00028499,
+        "profit_factor": 0.9308,
+        "is_valid": false,
+        "trade_count_available": false,
+        "return_observations": 504
+      },
+      "eligible_for_factstore": false,
+      "rejection_reasons": [
+        "chronological_holdout_not_walk_forward_evidence",
+        "survivorship_biased_universe"
+      ]
+    },
+    "momentum_12m_skip_3m": {
+      "config": {
+        "name": "momentum_12m_skip_3m",
+        "lookback_days": 252,
+        "skip_days": 63,
+        "rebalance_days": 21,
+        "top_fraction": 0.2,
+        "long_only": true,
+        "reverse_rank": false,
+        "gross_exposure": 1.0
+      },
+      "training_metrics": {
+        "total_return": 8.15808,
+        "annualized_return": 0.255473,
+        "sharpe_ratio": 0.9666,
+        "sortino_ratio": 1.1571,
+        "max_drawdown": 0.319182,
+        "calmar_ratio": 0.8004,
+        "win_rate": 0.479,
+        "num_trades": null,
+        "num_trading_days": 2453,
+        "volatility": 0.195115,
+        "avg_trade_return": 0.00097964,
+        "profit_factor": 1.2863,
+        "is_valid": false,
+        "trade_count_available": false,
+        "return_observations": 2453
+      },
+      "test_metrics": {
+        "total_return": -0.114404,
+        "annualized_return": -0.058939,
+        "sharpe_ratio": -0.5646,
+        "sortino_ratio": -0.7452,
+        "max_drawdown": 0.286185,
+        "calmar_ratio": -0.2059,
+        "win_rate": 0.4881,
+        "num_trades": null,
+        "num_trading_days": 504,
+        "volatility": 0.181567,
+        "avg_trade_return": -0.00017556,
+        "profit_factor": 0.9581,
+        "is_valid": false,
+        "trade_count_available": false,
+        "return_observations": 504
+      },
+      "eligible_for_factstore": false,
+      "rejection_reasons": [
+        "chronological_holdout_not_walk_forward_evidence",
+        "survivorship_biased_universe"
+      ]
+    },
+    "momentum_6m": {
+      "config": {
+        "name": "momentum_6m",
+        "lookback_days": 126,
+        "skip_days": 21,
+        "rebalance_days": 21,
+        "top_fraction": 0.2,
+        "long_only": true,
+        "reverse_rank": false,
+        "gross_exposure": 1.0
+      },
+      "training_metrics": {
+        "total_return": 4.546838,
+        "annualized_return": 0.192441,
+        "sharpe_ratio": 0.6738,
+        "sortino_ratio": 0.8079,
+        "max_drawdown": 0.360812,
+        "calmar_ratio": 0.5334,
+        "win_rate": 0.4998,
+        "num_trades": null,
+        "num_trading_days": 2453,
+        "volatility": 0.206865,
+        "avg_trade_return": 0.00078439,
+        "profit_factor": 1.2016,
+        "is_valid": false,
+        "trade_count_available": false,
+        "return_observations": 2453
+      },
+      "test_metrics": {
+        "total_return": -0.107804,
+        "annualized_return": -0.055438,
+        "sharpe_ratio": -0.6265,
+        "sortino_ratio": -0.8209,
+        "max_drawdown": 0.243662,
+        "calmar_ratio": -0.2275,
+        "win_rate": 0.502,
+        "num_trades": null,
+        "num_trading_days": 504,
+        "volatility": 0.162855,
+        "avg_trade_return": -0.00017364,
+        "profit_factor": 0.9532,
+        "is_valid": false,
+        "trade_count_available": false,
+        "return_observations": 504
+      },
+      "eligible_for_factstore": false,
+      "rejection_reasons": [
+        "chronological_holdout_not_walk_forward_evidence",
+        "survivorship_biased_universe"
+      ]
+    },
+    "reversal_1m": {
+      "config": {
+        "name": "reversal_1m",
+        "lookback_days": 21,
+        "skip_days": 1,
+        "rebalance_days": 5,
+        "top_fraction": 0.2,
+        "long_only": true,
+        "reverse_rank": true,
+        "gross_exposure": 1.0
+      },
+      "training_metrics": {
+        "total_return": 1.765876,
+        "annualized_return": 0.110171,
+        "sharpe_ratio": 0.33,
+        "sortino_ratio": 0.4114,
+        "max_drawdown": 0.413998,
+        "calmar_ratio": 0.2661,
+        "win_rate": 0.4321,
+        "num_trades": null,
+        "num_trading_days": 2453,
+        "volatility": 0.202807,
+        "avg_trade_return": 0.00049681,
+        "profit_factor": 1.1417,
+        "is_valid": false,
+        "trade_count_available": false,
+        "return_observations": 2453
+      },
+      "test_metrics": {
+        "total_return": 0.077909,
+        "annualized_return": 0.038224,
+        "sharpe_ratio": -0.0603,
+        "sortino_ratio": -0.0802,
+        "max_drawdown": 0.152579,
+        "calmar_ratio": 0.2505,
+        "win_rate": 0.4127,
+        "num_trades": null,
+        "num_trading_days": 504,
+        "volatility": 0.152239,
+        "avg_trade_return": 0.00019483,
+        "profit_factor": 1.0631,
+        "is_valid": false,
+        "trade_count_available": false,
+        "return_observations": 504
+      },
+      "eligible_for_factstore": false,
+      "rejection_reasons": [
+        "chronological_holdout_not_walk_forward_evidence",
+        "survivorship_biased_universe"
+      ]
+    },
+    "reversal_3m": {
+      "config": {
+        "name": "reversal_3m",
+        "lookback_days": 63,
+        "skip_days": 5,
+        "rebalance_days": 21,
+        "top_fraction": 0.2,
+        "long_only": true,
+        "reverse_rank": true,
+        "gross_exposure": 1.0
+      },
+      "training_metrics": {
+        "total_return": 4.300389,
+        "annualized_return": 0.186886,
+        "sharpe_ratio": 0.6595,
+        "sortino_ratio": 0.8803,
+        "max_drawdown": 0.346184,
+        "calmar_ratio": 0.5398,
+        "win_rate": 0.5051,
+        "num_trades": null,
+        "num_trading_days": 2453,
+        "volatility": 0.202711,
+        "avg_trade_return": 0.00076174,
+        "profit_factor": 1.1921,
+        "is_valid": false,
+        "trade_count_available": false,
+        "return_observations": 2453
+      },
+      "test_metrics": {
+        "total_return": 0.19297,
+        "annualized_return": 0.092232,
+        "sharpe_ratio": 0.2619,
+        "sortino_ratio": 0.3794,
+        "max_drawdown": 0.120991,
+        "calmar_ratio": 0.7623,
+        "win_rate": 0.5099,
+        "num_trades": null,
+        "num_trading_days": 504,
+        "volatility": 0.1684,
+        "avg_trade_return": 0.00040628,
+        "profit_factor": 1.1109,
+        "is_valid": false,
+        "trade_count_available": false,
+        "return_observations": 504
+      },
+      "eligible_for_factstore": false,
+      "rejection_reasons": [
+        "chronological_holdout_not_walk_forward_evidence",
+        "survivorship_biased_universe"
+      ]
+    },
+    "momentum_long_short": {
+      "config": {
+        "name": "momentum_long_short",
+        "lookback_days": 252,
+        "skip_days": 21,
+        "rebalance_days": 21,
+        "top_fraction": 0.2,
+        "long_only": false,
+        "reverse_rank": false,
+        "gross_exposure": 1.0
+      },
+      "training_metrics": {
+        "total_return": 0.044466,
+        "annualized_return": 0.004479,
+        "sharpe_ratio": -0.5887,
+        "sortino_ratio": -0.7125,
+        "max_drawdown": 0.221888,
+        "calmar_ratio": 0.0202,
+        "win_rate": 0.4509,
+        "num_trades": null,
+        "num_trading_days": 2453,
+        "volatility": 0.085203,
+        "avg_trade_return": 3.221e-05,
+        "profit_factor": 1.0182,
+        "is_valid": false,
+        "trade_count_available": false,
+        "return_observations": 2453
+      },
+      "test_metrics": {
+        "total_return": -0.159387,
+        "annualized_return": -0.08315,
+        "sharpe_ratio": -2.3348,
+        "sortino_ratio": -3.0775,
+        "max_drawdown": 0.190983,
+        "calmar_ratio": -0.4354,
+        "win_rate": 0.4643,
+        "num_trades": null,
+        "num_trading_days": 504,
+        "volatility": 0.061329,
+        "avg_trade_return": -0.00033697,
+        "profit_factor": 0.7879,
+        "is_valid": false,
+        "trade_count_available": false,
+        "return_observations": 504
+      },
+      "eligible_for_factstore": false,
+      "rejection_reasons": [
+        "chronological_holdout_not_walk_forward_evidence",
+        "survivorship_biased_universe"
+      ]
+    }
+  },
+  "portfolios": {
+    "equal_weight": {
+      "weights": {
+        "momentum_12m_skip_1m": 0.16666666666666666,
+        "momentum_12m_skip_3m": 0.16666666666666666,
+        "momentum_6m": 0.16666666666666666,
+        "reversal_1m": 0.16666666666666666,
+        "reversal_3m": 0.16666666666666666,
+        "momentum_long_short": 0.16666666666666666
+      },
+      "training_metrics": {
+        "total_return": 3.441499,
+        "annualized_return": 0.165525,
+        "sharpe_ratio": 0.6983,
+        "sortino_ratio": 0.8286,
+        "max_drawdown": 0.290091,
+        "calmar_ratio": 0.5706,
+        "win_rate": 0.5573,
+        "num_trades": null,
+        "num_trading_days": 2453,
+        "volatility": 0.152765,
+        "avg_trade_return": 0.00065458,
+        "profit_factor": 1.2256,
+        "is_valid": false,
+        "trade_count_available": false,
+        "return_observations": 2453
+      },
+      "test_metrics": {
+        "total_return": -0.047869,
+        "annualized_return": -0.024228,
+        "sharpe_ratio": -0.5507,
+        "sortino_ratio": -0.7317,
+        "max_drawdown": 0.191971,
+        "calmar_ratio": -0.1262,
+        "win_rate": 0.5198,
+        "num_trades": null,
+        "num_trading_days": 504,
+        "volatility": 0.134036,
+        "avg_trade_return": -6.168e-05,
+        "profit_factor": 0.9799,
+        "is_valid": false,
+        "trade_count_available": false,
+        "return_observations": 504
+      },
+      "eligible_for_factstore": false,
+      "rejection_reasons": [
+        "chronological_holdout_not_walk_forward_evidence",
+        "survivorship_biased_universe"
+      ]
+    },
+    "inverse_volatility": {
+      "weights": {
+        "momentum_12m_skip_1m": 0.13652752376568336,
+        "momentum_12m_skip_3m": 0.14022400759438258,
+        "momentum_6m": 0.13225986194043896,
+        "reversal_1m": 0.13490581421000677,
+        "reversal_3m": 0.13496966588829395,
+        "momentum_long_short": 0.3211131266011945
+      },
+      "training_metrics": {
+        "total_return": 2.464779,
+        "annualized_return": 0.136166,
+        "sharpe_ratio": 0.5993,
+        "sortino_ratio": 0.7039,
+        "max_drawdown": 0.24351,
+        "calmar_ratio": 0.5592,
+        "win_rate": 0.554,
+        "num_trades": null,
+        "num_trading_days": 2453,
+        "volatility": 0.130012,
+        "avg_trade_return": 0.00054044,
+        "profit_factor": 1.2205,
+        "is_valid": false,
+        "trade_count_available": false,
+        "return_observations": 2453
+      },
+      "test_metrics": {
+        "total_return": -0.068151,
+        "annualized_return": -0.034677,
+        "sharpe_ratio": -0.7525,
+        "sortino_ratio": -0.9868,
+        "max_drawdown": 0.176241,
+        "calmar_ratio": -0.1968,
+        "win_rate": 0.5119,
+        "num_trades": null,
+        "num_trading_days": 504,
+        "volatility": 0.115475,
+        "avg_trade_return": -0.00011358,
+        "profit_factor": 0.9574,
+        "is_valid": false,
+        "trade_count_available": false,
+        "return_observations": 504
+      },
+      "eligible_for_factstore": false,
+      "rejection_reasons": [
+        "chronological_holdout_not_walk_forward_evidence",
+        "survivorship_biased_universe"
+      ]
+    }
+  },
+  "train_correlations": {
+    "momentum_12m_skip_1m": {
+      "momentum_12m_skip_1m": 1.0,
+      "momentum_12m_skip_3m": 0.9487123327890924,
+      "momentum_6m": 0.9207995131074965,
+      "reversal_1m": 0.645741091203078,
+      "reversal_3m": 0.6142846967233803,
+      "momentum_long_short": 0.4357114673067046
+    },
+    "momentum_12m_skip_3m": {
+      "momentum_12m_skip_1m": 0.9487123327890924,
+      "momentum_12m_skip_3m": 1.0,
+      "momentum_6m": 0.8782924438372031,
+      "reversal_1m": 0.6511363148710638,
+      "reversal_3m": 0.6597420542167738,
+      "momentum_long_short": 0.3560830056545435
+    },
+    "momentum_6m": {
+      "momentum_12m_skip_1m": 0.9207995131074965,
+      "momentum_12m_skip_3m": 0.8782924438372031,
+      "momentum_6m": 1.0,
+      "reversal_1m": 0.671387002501673,
+      "reversal_3m": 0.6385263764925475,
+      "momentum_long_short": 0.3373609554099366
+    },
+    "reversal_1m": {
+      "momentum_12m_skip_1m": 0.645741091203078,
+      "momentum_12m_skip_3m": 0.6511363148710638,
+      "momentum_6m": 0.671387002501673,
+      "reversal_1m": 1.0,
+      "reversal_3m": 0.7379224687450646,
+      "momentum_long_short": -0.0349622092072214
+    },
+    "reversal_3m": {
+      "momentum_12m_skip_1m": 0.6142846967233803,
+      "momentum_12m_skip_3m": 0.6597420542167738,
+      "momentum_6m": 0.6385263764925475,
+      "reversal_1m": 0.7379224687450646,
+      "reversal_3m": 1.0,
+      "momentum_long_short": -0.1702864649133188
+    },
+    "momentum_long_short": {
+      "momentum_12m_skip_1m": 0.4357114673067046,
+      "momentum_12m_skip_3m": 0.3560830056545435,
+      "momentum_6m": 0.3373609554099366,
+      "reversal_1m": -0.0349622092072214,
+      "reversal_3m": -0.1702864649133188,
+      "momentum_long_short": 1.0
+    }
+  },
+  "notes": [
+    "All inputs are cached real NSE EOD files; no synthetic values were used.",
+    "Each sleeve uses next-session returns and predeclared parameters.",
+    "Portfolio weights are computed only from the training period.",
+    "Source manifest SHA-256: 77384a3cd248e88a7e02d11d800ad3bd1573f791197845991c787f294c633334",
+    "This matrix is diagnostic until repeated walk-forward folds and an authoritative universe pass."
+  ]
+}

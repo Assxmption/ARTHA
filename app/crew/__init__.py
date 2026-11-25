@@ -1,8 +1,13 @@
 """
-Crew Package
+Crew Package (imported lazily: crewai is heavy and only needed for AI reports).
 """
-from app.crew.analysis_crew import AnalysisCrew
 
-__all__ = [
-    "AnalysisCrew",
-]
+__all__ = ["AnalysisCrew"]
+
+
+def __getattr__(name):
+    if name == "AnalysisCrew":
+        from app.crew.analysis_crew import AnalysisCrew
+
+        return AnalysisCrew
+    raise AttributeError(name)

@@ -32,6 +32,7 @@ from app.quant.statarb import (
     PairSignal,
     CointPair,
 )
+from app.quant.backtest import compute_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,11 @@ class PairBacktestResult:
     max_drawdown: float
     avg_holding_days: float
     daily_returns: pd.Series
+    # Position held *after* each session's close (+1 long A/short B, -1
+    # short A/long B, 0 flat) and the hedge ratio fixed at entry; lets a
+    # replay know exactly what was open going into the next session.
+    positions: Optional[pd.Series] = None
+    entry_hedge: Optional[pd.Series] = None
 
 
 def backtest_pair(
@@ -116,19 +122,23 @@ def backtest_pair(
     hedge_ratios = [s.hedge_ratio for s in signals]
 
     # Align prices to signal dates
-    price_a = series_a.reindex([s.date for s in signals]).ffill()
-    price_b = series_b.reindex([s.date for s in signals]).ffill()
+    signal_dates = pd.DatetimeIndex([s.date for s in signals])
+    price_a = series_a.reindex(signal_dates)
+    price_b = series_b.reindex(signal_dates)
 
     # Simulate trades
     position = 0  # +1 = long A short B, -1 = short A long B, 0 = flat
     entry_spread = 0.0
     entry_date_idx = 0
     days_in_trade = 0
+    entry_hedge_ratio = 0.0
     trades: list[float] = []  # Per-trade returns
     holding_days: list[int] = []
 
     # Daily P&L tracking
     daily_pnl = pd.Series(0.0, index=dates)
+    positions = pd.Series(0, index=dates, dtype=int)
+    entry_hedges = pd.Series(np.nan, index=dates, dtype=float)
 
     for i, sig in enumerate(signals):
         if i == 0:
@@ -139,7 +149,7 @@ def backtest_pair(
         prev_b = float(price_b.iloc[i - 1])
         curr_a = float(price_a.iloc[i])
         curr_b = float(price_b.iloc[i])
-        hr = hedge_ratios[i]
+        hr = entry_hedge_ratio if position != 0 else hedge_ratios[i]
 
         if position != 0:
             days_in_trade += 1
@@ -162,10 +172,10 @@ def backtest_pair(
             )
 
             if should_exit:
-                # Close position — accumulate trade return
+                # Close position and charge the exit half of the round-trip
+                # cost in the daily equity curve as well as the trade record.
+                daily_pnl.iloc[i] -= TOTAL_COST_BPS / 10000 / 2
                 trade_return = daily_pnl.iloc[entry_date_idx + 1: i + 1].sum()
-                # Subtract transaction costs (round trip)
-                trade_return -= TOTAL_COST_BPS / 10000
                 trades.append(trade_return)
                 holding_days.append(days_in_trade)
                 position = 0
@@ -177,38 +187,36 @@ def backtest_pair(
                 position = 1
                 entry_date_idx = i
                 days_in_trade = 0
+                entry_hedge_ratio = float(hedge_ratios[i])
                 # Entry cost
                 daily_pnl.iloc[i] -= TOTAL_COST_BPS / 10000 / 2  # Half on entry
             elif signal_types[i] == "SHORT_A_LONG_B":
                 position = -1
                 entry_date_idx = i
                 days_in_trade = 0
+                entry_hedge_ratio = float(hedge_ratios[i])
                 daily_pnl.iloc[i] -= TOTAL_COST_BPS / 10000 / 2
 
-    # Compute metrics
+        positions.iloc[i] = position
+        if position != 0:
+            entry_hedges.iloc[i] = entry_hedge_ratio
+
+    # Force-close an open position at the final available observation so the
+    # daily equity curve and trade accounting use the same realized horizon.
+    if position != 0 and len(signals) > 1:
+        last_index = len(signals) - 1
+        daily_pnl.iloc[last_index] -= TOTAL_COST_BPS / 10000 / 2
+        trades.append(float(daily_pnl.iloc[entry_date_idx + 1:last_index + 1].sum()))
+        holding_days.append(days_in_trade)
+
+    # Compute metrics from compounded wealth, not arithmetic cumulative P&L.
     n_trades = len(trades)
     wins = sum(1 for t in trades if t > 0)
     losses = n_trades - wins
-
-    daily = daily_pnl.values
-    total_ret = float(np.sum(daily))
-    n_days = len(daily)
-    n_years = max(n_days / 252, 0.01)
-    ann_return = total_ret / n_years
-
-    daily_std = float(np.std(daily)) if n_days > 1 else 1.0
-    ann_vol = daily_std * np.sqrt(252)
-    sharpe = (np.mean(daily) / max(daily_std, 1e-8)) * np.sqrt(252)
-
-    downside = daily[daily < 0]
-    down_std = float(np.std(downside)) if len(downside) > 1 else daily_std
-    sortino = (np.mean(daily) / max(down_std, 1e-8)) * np.sqrt(252)
-
-    # Max drawdown
-    cum = np.cumsum(daily)
-    peak = np.maximum.accumulate(cum)
-    dd = peak - cum
-    max_dd = float(np.max(dd)) if len(dd) > 0 else 0.0
+    metrics = compute_metrics(
+        daily_pnl,
+        trades=pd.Series(trades, dtype=float),
+    )
 
     avg_hold = float(np.mean(holding_days)) if holding_days else 0.0
 
@@ -216,13 +224,15 @@ def backtest_pair(
         symbol_a=symbol_a, symbol_b=symbol_b,
         n_trades=n_trades,
         winning_trades=wins, losing_trades=losses,
-        total_return=round(total_ret, 6),
-        annualized_return=round(ann_return, 6),
-        sharpe_ratio=round(float(sharpe), 4),
-        sortino_ratio=round(float(sortino), 4),
-        max_drawdown=round(max_dd, 6),
+        total_return=metrics.total_return,
+        annualized_return=metrics.annualized_return,
+        sharpe_ratio=metrics.sharpe_ratio,
+        sortino_ratio=metrics.sortino_ratio,
+        max_drawdown=metrics.max_drawdown,
         avg_holding_days=round(avg_hold, 1),
         daily_returns=daily_pnl,
+        positions=positions,
+        entry_hedge=entry_hedges,
     )
 
 

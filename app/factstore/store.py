@@ -72,6 +72,20 @@ CREATE TABLE IF NOT EXISTS facts (
 )
 """
 
+_CREATE_JOBS_SQLITE = """
+CREATE TABLE IF NOT EXISTS jobs (
+    job_id        TEXT PRIMARY KEY,
+    symbol        TEXT NOT NULL,
+    status        TEXT NOT NULL,
+    current_stage TEXT,
+    stages_json   TEXT NOT NULL,
+    error         TEXT,
+    attempt_count INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+)
+"""
+
 _CREATE_TABLE_POSTGRES = """
 CREATE TABLE IF NOT EXISTS facts (
     fact_id     TEXT PRIMARY KEY,
@@ -80,6 +94,20 @@ CREATE TABLE IF NOT EXISTS facts (
     source      TEXT NOT NULL,
     created_at  TIMESTAMPTZ NOT NULL,
     data_json   JSONB NOT NULL
+)
+"""
+
+_CREATE_JOBS_POSTGRES = """
+CREATE TABLE IF NOT EXISTS jobs (
+    job_id        TEXT PRIMARY KEY,
+    symbol        TEXT NOT NULL,
+    status        TEXT NOT NULL,
+    current_stage TEXT,
+    stages_json   JSONB NOT NULL,
+    error         TEXT,
+    attempt_count INTEGER NOT NULL DEFAULT 1,
+    created_at    TIMESTAMPTZ NOT NULL,
+    updated_at    TIMESTAMPTZ NOT NULL
 )
 """
 
@@ -199,6 +227,14 @@ class FactStore:
         if self._backend == "sqlite":
             conn = self._get_sqlite_conn()
             conn.execute(_CREATE_TABLE_SQLITE)
+            conn.execute(_CREATE_JOBS_SQLITE)
+            columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()
+            }
+            if "attempt_count" not in columns:
+                conn.execute(
+                    "ALTER TABLE jobs ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 1"
+                )
             for idx_sql in _CREATE_INDEXES:
                 conn.execute(idx_sql)
             conn.commit()
@@ -207,6 +243,11 @@ class FactStore:
             try:
                 with conn.cursor() as cur:
                     cur.execute(_CREATE_TABLE_POSTGRES)
+                    cur.execute(_CREATE_JOBS_POSTGRES)
+                    cur.execute(
+                        "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS "
+                        "attempt_count INTEGER NOT NULL DEFAULT 1"
+                    )
                     for idx_sql in _CREATE_INDEXES:
                         cur.execute(idx_sql)
                 conn.commit()
@@ -374,6 +415,101 @@ class FactStore:
         sql = "SELECT fact_type, COUNT(*) as cnt FROM facts WHERE job_id = {p} GROUP BY fact_type"
         rows = self._execute_query(sql.format(p="?"), sql.format(p="%s"), (job_id,))
         return {r["fact_type"]: r["cnt"] for r in rows}
+
+    # ── Durable job checkpoints ──────────────────────────────────────────────
+
+    def upsert_job(
+        self,
+        job_id: str,
+        symbol: str,
+        status: str,
+        current_stage: Optional[str] = None,
+        stages: Optional[dict] = None,
+        error: Optional[str] = None,
+        attempt_count: int = 1,
+    ) -> None:
+        """Persist orchestration state so a job can resume after restart."""
+        now = datetime.now(timezone.utc).isoformat()
+        stages_json = json.dumps(stages or {}, default=str)
+        if self._backend == "sqlite":
+            conn = self._get_sqlite_conn()
+            conn.execute(
+                """INSERT INTO jobs
+                   (job_id, symbol, status, current_stage, stages_json, error,
+                    attempt_count, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(job_id) DO UPDATE SET
+                     symbol=excluded.symbol,
+                     status=excluded.status,
+                     current_stage=excluded.current_stage,
+                     stages_json=excluded.stages_json,
+                     error=excluded.error,
+                     attempt_count=excluded.attempt_count,
+                     updated_at=excluded.updated_at""",
+                (job_id, symbol, status, current_stage, stages_json, error,
+                 attempt_count, now, now),
+            )
+            conn.commit()
+            return
+
+        conn = self._get_pg_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO jobs
+                       (job_id, symbol, status, current_stage, stages_json, error,
+                        attempt_count, created_at, updated_at)
+                       VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
+                       ON CONFLICT(job_id) DO UPDATE SET
+                         symbol=EXCLUDED.symbol,
+                         status=EXCLUDED.status,
+                         current_stage=EXCLUDED.current_stage,
+                         stages_json=EXCLUDED.stages_json,
+                         error=EXCLUDED.error,
+                         attempt_count=EXCLUDED.attempt_count,
+                         updated_at=EXCLUDED.updated_at""",
+                    (job_id, symbol, status, current_stage, stages_json, error,
+                     attempt_count, now, now),
+                )
+            conn.commit()
+        finally:
+            self._put_pg_conn(conn)
+
+    def get_job_state(self, job_id: str) -> Optional[dict]:
+        """Load durable orchestration state for a job."""
+        if self._backend == "sqlite":
+            conn = self._get_sqlite_conn()
+            row = conn.execute(
+                "SELECT job_id, symbol, status, current_stage, stages_json, error, attempt_count, created_at, updated_at "
+                "FROM jobs WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            result = dict(row)
+        else:
+            conn = self._get_pg_conn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT job_id, symbol, status, current_stage, stages_json, error, attempt_count, created_at, updated_at "
+                        "FROM jobs WHERE job_id = %s",
+                        (job_id,),
+                    )
+                    row = cur.fetchone()
+                    if row is None:
+                        return None
+                    columns = [desc[0] for desc in cur.description]
+                    result = dict(zip(columns, row))
+            finally:
+                self._put_pg_conn(conn)
+
+        stages = result.get("stages_json") or {}
+        if isinstance(stages, str):
+            stages = json.loads(stages)
+        result["stages"] = stages
+        result.pop("stages_json", None)
+        return result
 
     # ── Delete ──────────────────────────────────────────────────────────────
 

@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 
 from app.quant.regime import RegimeDetector, detect_regime
+from app.quant.rl_allocator import RLAllocator, RLState, AllocationAction
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,7 @@ class LiveStrategyEngine:
         model_dir: str | Path = "data_cache/models",
         ml_retrain_days: int = 30,
         regime_retrain_days: int = 90,
+        use_rl_allocator: bool = False,
     ):
         self.symbols = symbols
         self.model_dir = Path(model_dir)
@@ -92,6 +94,12 @@ class LiveStrategyEngine:
 
         self.ml_retrain_days = ml_retrain_days
         self.regime_retrain_days = regime_retrain_days
+
+        # RL Allocator integration (AGENTS.md Rule 1 — deterministic RL, no LLM)
+        self._use_rl_allocator = use_rl_allocator
+        self._rl_allocator: Optional[RLAllocator] = (
+            RLAllocator() if use_rl_allocator else None
+        )
 
         # Models
         self._regime_detector: Optional[RegimeDetector] = None
@@ -588,15 +596,92 @@ class LiveStrategyEngine:
 
         return self._current_regime
 
-    @staticmethod
-    def _get_hedge_ratio(regime: str) -> float:
+    def _get_hedge_ratio(self, regime: str) -> float:
         """
-        Conservative hedge priors (same as backtest).
-        NOT optimized on sample — see run_multi_strategy_backtest.py
-        for documentation of these values.
+        Returns the regime-dependent hedge ratio.
+
+        When ``use_rl_allocator=True`` and the RL agent is trained, delegates
+        to the DQN policy (``RLAllocator.get_allocation``).  Otherwise (or
+        when the RL agent hasn't been trained yet) falls back to the
+        conservative rule-based priors documented in
+        ``run_multi_strategy_backtest.py``.
+
+        Note: ``RLAllocator.get_allocation`` already has its own rule-based
+        fallback when ``is_trained=False``, so we do NOT need to duplicate
+        that logic here — we just check the flag for clarity.
         """
+        if self._use_rl_allocator and self._rl_allocator is not None:
+            state = self._build_rl_state(regime)
+            action = self._rl_allocator.get_allocation(state)
+            logger.info(
+                "RL allocator (%s) → %s",
+                "trained" if self._rl_allocator.is_trained else "untrained-fallback",
+                action.description,
+            )
+            return action.hedge_ratio
+
+        # Rule-based conservative priors (NOT optimized on sample)
         ratios = {"BULL": 0.30, "BEAR": 0.70, "SIDEWAYS": 0.50}
         return ratios.get(regime, 0.50)
+
+    def _build_rl_state(self, regime: str) -> RLState:
+        """
+        Construct the RL observation vector from current engine state.
+
+        Uses whatever data is available; missing features default to
+        neutral values (0.0 for scores, 0.5 for hedge).
+        """
+        # Regime one-hot
+        regime_upper = regime.upper()
+
+        # Compute signal features from historical data if available
+        rolling_sharpe = 0.0
+        rolling_vol = 0.0
+        current_dd = 0.0
+        momentum = 0.0
+
+        if self._historical_prices:
+            panel = pd.DataFrame(self._historical_prices).dropna(how="all")
+            if not panel.empty and len(panel) >= 20:
+                nifty_proxy = panel.mean(axis=1)
+                daily_ret = nifty_proxy.pct_change().dropna()
+
+                if len(daily_ret) >= 20:
+                    # Rolling Sharpe (annualised, 20-day window)
+                    tail = daily_ret.iloc[-20:]
+                    mu = tail.mean()
+                    sigma = tail.std()
+                    if sigma > 1e-10:
+                        rolling_sharpe = float(mu / sigma * np.sqrt(252))
+                    rolling_vol = float(sigma * np.sqrt(252))
+
+                # Current drawdown
+                cum = (1 + nifty_proxy.pct_change().dropna()).cumprod()
+                peak = cum.cummax()
+                dd = ((cum - peak) / peak)
+                if not dd.empty:
+                    current_dd = float(dd.iloc[-1])
+
+                # 20-day momentum
+                if len(nifty_proxy) >= 20:
+                    momentum = float(
+                        (nifty_proxy.iloc[-1] / nifty_proxy.iloc[-20]) - 1.0
+                    )
+
+        return RLState(
+            regime_bull=1.0 if regime_upper == "BULL" else 0.0,
+            regime_sideways=1.0 if regime_upper == "SIDEWAYS" else 0.0,
+            regime_bear=1.0 if regime_upper == "BEAR" else 0.0,
+            rolling_sharpe_20d=rolling_sharpe,
+            rolling_vol_20d=rolling_vol,
+            current_drawdown=current_dd,
+            vix_z=0.0,            # VIX not available in offline stack yet
+            sentiment_score=0.0,  # Sentiment not wired to live engine yet
+            momentum_20d=momentum,
+            current_hedge=0.5,    # Will be overwritten by RL loop
+            portfolio_return_5d=0.0,
+            portfolio_drawdown=current_dd,
+        )
 
     # ── Model Training ──────────────────────────────────────────────────────
 
