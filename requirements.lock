@@ -231,7 +231,6 @@ beautifulsoup4==4.15.0 \
     --hash=sha256:d6f88de62e1d4e38ecb1077eb9724cd0eff29d2a08ca16a401e9b9e93f117cf9
     # via
     #   -r requirements.txt
-    #   crewai-tools
     #   jugaad-data
     #   yfinance
 boto3==1.44.11 \
@@ -714,9 +713,7 @@ colorama==0.4.6 ; sys_platform == 'win32' \
 crewai==1.15.45 \
     --hash=sha256:15d8d680b6a2190ffade4757a1e163eccbf0b53145f03e901e1f9d49ba26117f \
     --hash=sha256:1ca8e9355b011406492af26dc8d8abbeb88a7ad3758463e8d1c4a16799282202
-    # via
-    #   -r requirements.txt
-    #   crewai-tools
+    # via -r requirements.txt
 crewai-cli==1.15.45 \
     --hash=sha256:2c3d1d2abe801a1bbbf231b1075a11b2edfc4dc2bca0d6c0f07e50190b4d0fd0 \
     --hash=sha256:3a0233a26cc1b7ab75074f4a599a3645f0ef548473f9edef62e30a6a45cb7c70
@@ -727,10 +724,6 @@ crewai-core==1.15.45 \
     # via
     #   crewai
     #   crewai-cli
-crewai-tools==1.15.45 \
-    --hash=sha256:0f3f73342eb8f624359f6c315b69684b383ae749d0c611d9e1c1882d519ca91f \
-    --hash=sha256:afbf0cdc018c90db5c7e6e022d6491ca7c9011a88aceeadd94d7f0b0a8674977
-    # via -r requirements.txt
 cryptography==50.0.2 \
     --hash=sha256:0ddc924c04591c2811ca024d62ecad4f7f6f08af8939c211438f48a16bd23602 \
     --hash=sha256:0ec5f09541743261e66e291b4a0cbf0fb2997aeaab6d9e9c740b9dba1b58d1c2 \
@@ -831,10 +824,6 @@ curl-cffi==0.17.0 \
     --hash=sha256:f8cf840646d3e57637b8caae7d0d93334dfed0bfbf6f160b36479a7d6069d547 \
     --hash=sha256:fc33ca76371bc96df3c4e8593449a1e0e28086bf8016addb851905090069178c
     # via yfinance
-defusedxml==0.7.1 \
-    --hash=sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69 \
-    --hash=sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61
-    # via youtube-transcript-api
 deprecation==2.1.0 \
     --hash=sha256:72b3bde64e5d778694b0cf68178aed03d15e15477116add3fb773e581f9518ff \
     --hash=sha256:a10811591210e1fb0e768a8c25517cabeabcba6f0bf96564f8ff45189f90b14a
@@ -953,9 +942,6 @@ filetype==1.2.0 \
     --hash=sha256:66b56cd6474bf41d8c54660347d37afcc3f7d1970648de365c102ef77548aadb \
     --hash=sha256:7ce71b6880181241cf7ac8697a2f1eb6a8bd9b429f7ad6d27b8db9ba5f1c2d25
     # via langchain-google-genai
-flatbuffers==25.12.19 \
-    --hash=sha256:7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4
-    # via onnxruntime
 formulaic==1.2.2 \
     --hash=sha256:0f84ff49e3fc9dc0e68ab08a0a9427874021aa6c558e66b44dc634a35739b09b \
     --hash=sha256:c99e8f11ff7d327eaecaf63855ca69b7fa0da100ad6c0041ef80912fbac667e6
@@ -1927,7 +1913,6 @@ lxml==6.1.3 \
     # via
     #   -r requirements.txt
     #   jugaad-data
-    #   python-docx
     #   yfinance
 markdown==3.11.3 \
     --hash=sha256:81eb91631dc97ad1efbc76019ef0f80fe90ca49ddf81546752d79989c3bfff3e \
@@ -2266,10 +2251,6 @@ narwhals==2.29.0 \
     # via
     #   formulaic
     #   scikit-learn
-networkx==3.7 \
-    --hash=sha256:e3fd2c13a7814cee3746340d8d7f8598a67f16a58bf47fb7f8793fab6efca1b0 \
-    --hash=sha256:fd77a511bd90f39f3d016351345b52cf5319b813bdca01de3f755d3cca62e96a
-    # via pymupdf
 nselib==2.5.1 \
     --hash=sha256:696f7c86aa916c8cace40eecd7828316afa43fd2508a88e0fb85ec26bedc5f17 \
     --hash=sha256:7a0750ce27e1b2e939960c6c94663a58dcd2e905b0562613e7c2ddfe0db00364
@@ -2348,11 +2329,9 @@ numpy==2.5.5 \
     #   hmmlearn
     #   lancedb
     #   langchain-community
-    #   onnxruntime
     #   pandas
     #   patsy
     #   pykalman
-    #   pymupdf
     #   qdrant-client
     #   scikit-learn
     #   scipy
@@ -2362,32 +2341,6 @@ oauthlib==4.0.1 \
     --hash=sha256:3d73febdb6faa00f277c81fb04be7b7586fb96fc3b7f0b9c772dada69a25ede7 \
     --hash=sha256:498a298876e996301950a5b053d12c31628bb7b895db03666430c69ce182eb61
     # via crewai
-onnxruntime==1.32.0 \
-    --hash=sha256:02ea12a28c069ea8510093d95a7f6ff8126bfd9fc5c0d3381c03b80fb2b424ba \
-    --hash=sha256:2303372a85299b6757b0e11e1cbf13e410ddf7e10c37f4b37e99d1c90e7daf7c \
-    --hash=sha256:23361cdf98afac352d10aa7d9e0a10ceaeb02d38430fb693c6eff370196db62d \
-    --hash=sha256:27bf5dad46355a8a435c9c4e1556464d99ca834ea44e0f452909712068b8821b \
-    --hash=sha256:29e4b0fdd3bea834ace358bd8c48641266ec327f730363ab0ab5d0ca574d38fe \
-    --hash=sha256:2b08ee990d00ab2ee129c5e039f7339963335a4d76f5bd22bfb4f896ae1cec0a \
-    --hash=sha256:2c4338c899144fd055a86c1d89424001db60e48a474e198c0fd0d1d577e4b663 \
-    --hash=sha256:366b9e53d07812cc5c92822cecf7563b76a8a0f32ba3bb8dd232a206ac3bcb6c \
-    --hash=sha256:4135431395c1f37de0811f452c20a8b774f51812fda6c49611ed9899bbdbeeb4 \
-    --hash=sha256:48b878f9551d465aa79ee94ecaf49a1f6b5d27f2975efa775ded374db14d0af1 \
-    --hash=sha256:54d02baff2df38777b4c3cc7af326406fe8b8a48f54720f4c446d2d327920a79 \
-    --hash=sha256:5a34fc4dfeb5a7b4a74c95dcba1e773d722abda720b474edf1b0c419dc6d163d \
-    --hash=sha256:64d394c69d561af3efd4d4f49dcac8f11d0ce135a20701c16d53b74056cd4cf8 \
-    --hash=sha256:926b6a87ffdcef56805b213807c28b97ae53763a630795baee1dfb420c2a5b68 \
-    --hash=sha256:99e1074c4b2197accd5073052a465361be17b89c093b8ffb6e6bd8f986c52df8 \
-    --hash=sha256:ab327b736552324af8d2a38bef5a65ed773f67184a36ff642beec7f5b4e9b03f \
-    --hash=sha256:b01314ab8aa8176919818b19b899cd1cd72b5e4fc33e1127396f043206b6ceed \
-    --hash=sha256:b224d11cfaecc95b85bdbd69f1673a984c7879af5823bb3ff377b9cb90b176fc \
-    --hash=sha256:b33d822c19d036944bd969491d20095fc8def8ad0f32a969f6376df7568c0344 \
-    --hash=sha256:c7f9aa98036ba2a47aa041a4a8c6d0a1f7bfe1bde44c131dcd15ce334f2f148d \
-    --hash=sha256:d52510bbbcc880c13b826f7d75cdf33ac5cf0bb864d960000fc29ce73f0cb83e \
-    --hash=sha256:d7e0c45cc5f456ad7805e6dd256a7662736cda9c2fd17becae194eb3c2f6df72 \
-    --hash=sha256:e36c187006e7a7c8b8d6d57f1a209dd63f52430dca6c282b177718ad6b841054 \
-    --hash=sha256:efe7456952c243a05a53d5b8732953625144642c2f3989094277f6217f0c0c40
-    # via pymupdf
 openai==2.54.0 \
     --hash=sha256:89089789197ccdb87f173a03145ed1598d00795220c93e96cf712b1cbf5e5f2b \
     --hash=sha256:e3e6f8bc1ba30ddf381ace1a14340eed381cb984a1a59bd0f34b5be3b5d49cfa
@@ -2523,7 +2476,6 @@ packaging==26.4 \
     #   langchain-core
     #   langsmith
     #   litellm
-    #   onnxruntime
     #   patsy
     #   pykalman
     #   statsmodels
@@ -2954,33 +2906,9 @@ protobuf==7.36.2 \
     --hash=sha256:f4fee11ec330d238b34a05c9b675f693c20415d1c5bd7d5320cc2f8a798eb9cf
     # via
     #   googleapis-common-protos
-    #   onnxruntime
     #   opentelemetry-proto
     #   qdrant-client
     #   yfinance
-psutil==7.2.2 \
-    --hash=sha256:0746f5f8d406af344fd547f1c8daa5f5c33dbc293bb8d6a16d80b4bb88f59372 \
-    --hash=sha256:076a2d2f923fd4821644f5ba89f059523da90dc9014e85f8e45a5774ca5bc6f9 \
-    --hash=sha256:11fe5a4f613759764e79c65cf11ebdf26e33d6dd34336f8a337aa2996d71c841 \
-    --hash=sha256:1a571f2330c966c62aeda00dd24620425d4b0cc86881c89861fbc04549e5dc63 \
-    --hash=sha256:1a7b04c10f32cc88ab39cbf606e117fd74721c831c98a27dc04578deb0c16979 \
-    --hash=sha256:1fa4ecf83bcdf6e6c8f4449aff98eefb5d0604bf88cb883d7da3d8d2d909546a \
-    --hash=sha256:2edccc433cbfa046b980b0df0171cd25bcaeb3a68fe9022db0979e7aa74a826b \
-    --hash=sha256:7b6d09433a10592ce39b13d7be5a54fbac1d1228ed29abc880fb23df7cb694c9 \
-    --hash=sha256:8c233660f575a5a89e6d4cb65d9f938126312bca76d8fe087b947b3a1aaac9ee \
-    --hash=sha256:917e891983ca3c1887b4ef36447b1e0873e70c933afc831c6b6da078ba474312 \
-    --hash=sha256:ab486563df44c17f5173621c7b198955bd6b613fb87c71c161f827d3fb149a9b \
-    --hash=sha256:ae0aefdd8796a7737eccea863f80f81e468a1e4cf14d926bd9b6f5f2d5f90ca9 \
-    --hash=sha256:b0726cecd84f9474419d67252add4ac0cd9811b04d61123054b9fb6f57df6e9e \
-    --hash=sha256:b58fabe35e80b264a4e3bb23e6b96f9e45a3df7fb7eed419ac0e5947c61e47cc \
-    --hash=sha256:c7663d4e37f13e884d13994247449e9f8f574bc4655d509c3b95e9ec9e2b9dc1 \
-    --hash=sha256:e452c464a02e7dc7822a05d25db4cde564444a67e58539a00f929c51eddda0cf \
-    --hash=sha256:e78c8603dcd9a04c7364f1a3e670cea95d51ee865e4efb3556a3a63adef958ea \
-    --hash=sha256:eb7e81434c8d223ec4a219b5fc1c47d0417b12be7ea866e24fb5ad6e84b3d988 \
-    --hash=sha256:ed0cace939114f62738d808fdcecd4c869222507e266e574799e9c0faa17d486 \
-    --hash=sha256:eed63d3b4d62449571547b60578c5b2c4bcccc5387148db46e0c2313dad0ee00 \
-    --hash=sha256:fd04ef36b4a6d599bbdb225dd1d3f51e00105f6d48a28f006da7f9822f2606d8
-    # via pymupdf
 psycopg2-binary==2.9.13 \
     --hash=sha256:0405dd4d97720e7ab177aa02e493f524907c4cb3c445ac173e2627948d3d0528 \
     --hash=sha256:0463c00f946517f3e69192a59e6601e023ff9de45ad0a875eda3d6b1bebeb7ce \
@@ -3297,26 +3225,6 @@ pyluach==2.3.0 \
     --hash=sha256:4497b731aef59508b079dbf5f00bc5bf4329ac45090a6cd37b5a83756f0e69ab \
     --hash=sha256:ec6e30669d1df50c9ca160486da44a8195bb4c7a5d3d533990d0c5b03accd281
     # via exchange-calendars
-pymupdf==2.1 \
-    --hash=sha256:1bb2284bde6067f05f83961ea678480060870dc966ad520bcf97da0b0eccf40c \
-    --hash=sha256:5a1a1fee36d5598013614e06eef25aaa68819d828f5401170dbcaf6f2714d1dd \
-    --hash=sha256:9ac95f98016e83eafb8f1d786396f9c60e400d559590596e5b2df9eb6384948b \
-    --hash=sha256:a9efa2e9e5f469d3b5749199329739cfef1ff1d1846538ced4885c544eecbcd9 \
-    --hash=sha256:e1122bbc3a1212396f0d70d19f78e084991b59ebdfc9d846c28ca8b509de01ad
-    # via
-    #   crewai-tools
-    #   pymupdf-layout
-    #   pymupdf4llm
-pymupdf-layout==2.1 \
-    --hash=sha256:e7e00bc50ec9113d36bdbb0dd5cdafa5f4d61e22e598960fc187ee4f721f5095
-    # via
-    #   pymupdf
-    #   pymupdf4llm
-pymupdf4llm==2.1 \
-    --hash=sha256:2fe8bb344444c6a8ef41fd745d2d10f6da59df6e104ef20f35d51dd26914b5fb
-    # via
-    #   pymupdf
-    #   pymupdf-layout
 pypdf==7.1.1 \
     --hash=sha256:04c5680d4b4cfa04ab505b09393fc949860c34a4dad6565284d11a2f5c3ce8b1 \
     --hash=sha256:2eff4e2fc5fb22a6d6711e6f1166cdc9ab5765d90cd0d77dfea3f4aa91a27b1d
@@ -3356,10 +3264,6 @@ python-dateutil==2.9.0.post0 \
     #   lance-namespace-urllib3-client
     #   pandas
     #   pendulum
-python-docx==1.2.0 \
-    --hash=sha256:3fd478f3250fbbbfd3b94fe1e985955737c145627498896a8a6bf81f4baf66c7 \
-    --hash=sha256:7bc9d7b7d8a69c9c02ca09216118c86552704edc23bac179283f2e38f86220ce
-    # via crewai-tools
 python-dotenv==1.2.4 \
     --hash=sha256:42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc \
     --hash=sha256:f0d53e69935a851c0dcc78f3ab7aaccd8cabef0b92382b576b824212902873c0
@@ -3376,10 +3280,6 @@ python-multipart==0.0.34 \
     # via
     #   -r requirements.txt
     #   mcp
-pytube==15.0.0 \
-    --hash=sha256:076052efe76f390dfa24b1194ff821d4e86c17d41cb5562f3a276a8bcbfc9d1d \
-    --hash=sha256:07b9904749e213485780d7eb606e5e5b8e4341aa4dccf699160876da00e12d78
-    # via crewai-tools
 pytz==2026.6 \
     --hash=sha256:3b0fc2727707663d6e517936f444fd8a8b240f1fc32f4bf7ee03274245945284 \
     --hash=sha256:7fed3fee8fd6bd4a2b7b75a8d56021d0624127bf69bd5691f115db929ac570b3
@@ -3493,7 +3393,6 @@ pyyaml==6.0.4 \
     #   langchain-community
     #   langchain-core
     #   litellm
-    #   pymupdf
     #   uvicorn
 qdrant-client==1.14.3 \
     --hash=sha256:66faaeae00f9b5326946851fe4ca4ddb1ad226490712e2f05142266f68dfc04d \
@@ -3649,7 +3548,6 @@ requests==2.34.2 \
     --hash=sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed
     # via
     #   -r requirements.txt
-    #   crewai-tools
     #   google-auth
     #   google-genai
     #   instructor
@@ -3664,7 +3562,6 @@ requests==2.34.2 \
     #   tiktoken
     #   vadersentiment
     #   yfinance
-    #   youtube-transcript-api
 requests-toolbelt==1.0.0 \
     --hash=sha256:7681a0a3d047012b5bdc0ee37d7f8f07ebe76ab08caeccfc3921ce23c88d5bc6 \
     --hash=sha256:cccfdd665f0a24fcf4726e690f65639d272bb0637b9b92dfd91a5568ccf6bd06
@@ -3954,9 +3851,7 @@ sniffio==1.3.1 \
 soupsieve==4.1.3 \
     --hash=sha256:13f70186c8f40bf8d0ff7bbab09a18fb149600b465269207b5e5b588f55fda08 \
     --hash=sha256:7a390d1a57d1ab7bb228531e9b8a750a5ebf87db774e0ef6faeeac057d22a5bf
-    # via
-    #   beautifulsoup4
-    #   crewai-tools
+    # via beautifulsoup4
 sqlalchemy==2.1.9 \
     --hash=sha256:0970970fe6bc64e1718d85acf45a32728e5d33817de4c89a8bf6d5b3a3fa4f4d \
     --hash=sha256:0b44f50bd32fac29e12fce362f37a8b7e8f1e4d0dea02dcc837f00b5238ef5fc \
@@ -4103,10 +3998,6 @@ statsmodels==0.15.0 \
     --hash=sha256:edd803f4606061af8c7a83e2326ea294cbfa802a908dfbda4a88347301fb6820 \
     --hash=sha256:edee066ac9b171d95c3de925225331a21de1deb5b6452f252bc853e44566e72b
     # via -r requirements.txt
-tabulate==0.10.0 \
-    --hash=sha256:e2cfde8f79420f6deeffdeda9aaec3b6bc5abce947655d17ac662b126e48a60d \
-    --hash=sha256:f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3
-    # via pymupdf
 tenacity==9.1.4 \
     --hash=sha256:6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55 \
     --hash=sha256:adb31d4c263f2bd041081ab33b498309a57c77f9acf2db65aadf0898179cf93a
@@ -4182,7 +4073,6 @@ tiktoken==0.12.0 \
     --hash=sha256:fc530a28591a2d74bce821d10b418b26a094bf33839e69042a6e86ddb7a7fb27 \
     --hash=sha256:ffc5288f34a8bc02e1ea7047b8d041104791d2ddbf42d1e5fa07822cbffe16bd
     # via
-    #   crewai-tools
     #   langchain-openai
     #   litellm
 tokenizers==0.23.3 \
@@ -4277,7 +4167,6 @@ typing-extensions==4.16.0 \
     #   pydantic
     #   pydantic-core
     #   pydantic-settings
-    #   python-docx
     #   referencing
     #   sqlalchemy
     #   starlette
@@ -5126,10 +5015,6 @@ yfinance==1.8.0 \
     --hash=sha256:ae8a00299de61e34e724c8a9c409028508fb999ec5ff526b4382d9011f8e922a \
     --hash=sha256:f148b6db4151389625f2da5b07b4c067144fbb4d0537d0de19699c447f4405d5
     # via -r requirements.txt
-youtube-transcript-api==1.2.5 \
-    --hash=sha256:5e750bd1bac188c1b4afeaf20464ba4dd7a5fb05617f48463f9faa5bace683cc \
-    --hash=sha256:e79323bcb2daebed25773fef51a8dd10fee2ff39fb5993dccbe060470d6721ea
-    # via crewai-tools
 zipp==4.1.2 \
     --hash=sha256:b30cb6cd253122169c47de245ca24a86bac2a5d3802ba15bf7ba6414eb9e144d \
     --hash=sha256:cf474b90b07ea932637e17c6b9479de2b2882900b0d311bdaf4f5c000a15a97f

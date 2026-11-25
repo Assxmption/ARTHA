@@ -40,11 +40,9 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Security(securi
 ---
 
 ## Protected Surfaces
-1. **Paper Trading Daemon (`app/api/paper_trade_routes.py`)**:
-   - `POST /api/paper/start`
-   - `POST /api/paper/stop`
-   - `POST /api/paper/reset`
-   - Prevents unauthorized state alteration of virtual capital or background daemons.
+1. **Operator-only actions (`require_admin`, `ADMIN_EMAILS`)**:
+   - `POST /api/paper/run`, Kite login/logout, screener rebuilds, live-engine refresh
+   - Prevents visitors from altering the paper books, the broker session, or triggering heavy jobs.
 2. **User Watchlists & Portfolio State**:
    - Custom watchlist management stored in Supabase PostgreSQL tables.
 3. **CI/CD Keep-Alive Health Checks**:
@@ -53,5 +51,5 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Security(securi
 ---
 
 ## System Connections
-- **Backend API**: Injected across `app/api/paper_trade_routes.py` and `app/api/company_routes.py`.
+- **Backend API**: `app/security/auth.py` (`get_current_user`, `optional_user`, `require_user`, `require_admin`) used across `app/api/*`.
 - **Frontend Auth**: Integrated with Supabase JS SDK via `frontend/src/contexts/AuthContext.jsx` and `frontend/src/pages/Auth.jsx`.

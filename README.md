@@ -81,12 +81,18 @@ git clone https://github.com/Assxmption/ARTHA.git && cd ARTHA
 # Virtual environment
 python3 -m venv .venv && source .venv/bin/activate
 
-# Dependencies
-pip install -r requirements.txt
+# Dependencies (hash-pinned; or `pip install -r requirements.txt` for latest compatible)
+pip install --require-hashes -r requirements.lock
 
-# API keys
-cp .env.example .env   # Edit with your Groq/Serper keys
+# Your own keys — never commit .env
+cp .env.example .env   # Add your own Groq/Gemini keys (and Kite/Supabase if you use them)
 ```
+
+### Deploy / share
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). On a public deployment visitors sign up for their own
+account; AI features use the operator's keys under a daily demo quota, or the visitor's own free
+Groq/Gemini key (Settings → AI model keys, stored only in their browser). Only `ADMIN_EMAILS`
+can connect Kite or run the paper engine. Paper trading is simulated — no real orders, ever.
 
 ### Run the Demo
 ```bash
@@ -99,7 +105,7 @@ This runs all components end-to-end on synthetic data:
 - Trains an HMM regime detector
 - Generates multi-strategy signals
 - Shows RL allocator (untrained fallback)
-- Demonstrates paper trading readiness
+- Sets up the paper books (simulated orders only)
 - Writes and reads from the Fact Store
 
 ### Run Tests
@@ -153,7 +159,9 @@ artha/
 │   │   ├── rl_allocator.py      #   DQN regime-conditioned position sizing
 │   │   ├── simulator.py         #   Trading simulator with transaction costs
 │   │   ├── backtest.py          #   Walk-forward validation protocol
-│   │   ├── paper_trade.py       #   Virtual execution daemon (SQLite)
+│   │   ├── live_dashboard.py    #   Live OOS portfolio/pairs engine (rule-6 gate)
+│   │   ├── paper_book.py        #   Paper books: order ledger + scheduler (simulated)
+│   │   ├── paper_report.py      #   Paper report + CSV/XLSX/PDF exports
 │   │   ├── sleeve_validation.py #   Causal sleeve matrix comparison
 │   │   ├── signal_injector.py   #   Validation evidence gate
 │   │   └── historical_validation.py # Real-data train/test protocol
@@ -170,7 +178,8 @@ artha/
 │   │   ├── schemas.py           #   Pydantic models (FactType, QuantSignal, etc.)
 │   │   └── store.py             #   SQLite-backed fact persistence
 │   ├── llm/
-│   │   └── router.py            #   Tiered LiteLLM config (cheap→mid→deep)
+│   │   ├── router.py            #   Tiered LiteLLM config (cheap→mid→deep)
+│   │   └── keys.py              #   Bring-your-own-key + owner demo quota
 │   └── api/                     # FastAPI endpoints
 ├── scripts/
 │   ├── demo_artha.py            #   End-to-end demo

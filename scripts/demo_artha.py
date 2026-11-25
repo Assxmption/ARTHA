@@ -178,19 +178,19 @@ def main() -> None:
               f"aggression={action.aggression:.2f}×  ({trained})")
 
     # ── 6. Paper Trading Readiness ──────────────────────────────────────────
-    banner("6. Paper Trading Daemon")
-    from app.quant.paper_trade import PaperTradingDaemon
+    banner("6. Paper Books (simulated orders only)")
+    import tempfile
+    from pathlib import Path as _Path
 
-    daemon = PaperTradingDaemon(
-        symbols=demo_symbols[:3],
-        db_path=":memory:",
-    )
-    metrics = daemon.get_validation_metrics()
-    print(f"  ✅ Daemon ready (SQLite in-memory)")
-    print(f"  📊 Days running:    {metrics['days_running']}")
-    print(f"  📊 Forward Sharpe:  {metrics['forward_sharpe']:.4f}")
-    print(f"  📊 Strategy weights: {daemon.get_strategy_weights()['weights']}")
-    print(f"  ⚠️  No broker API wired — virtual execution only (AGENTS.md Rule 9)")
+    from app.quant.paper_book import BOOKS, INITIAL_CAPITAL, PaperLedger
+
+    ledger = PaperLedger(_Path(tempfile.mkdtemp()) / "demo_ledger.db")
+    from datetime import datetime as _dt
+    for key in BOOKS:
+        ledger.ensure_book(key, INITIAL_CAPITAL, _dt.now())
+    for key, spec in BOOKS.items():
+        print(f"  ✅ {spec.label:40s} validated={spec.validated}  orders={len(ledger.orders(key))}")
+    print(f"  ⚠️  No broker order API exists — virtual fills only (AGENTS.md Rule 9)")
 
     # ── 7. Fact Store ───────────────────────────────────────────────────────
     banner("7. Fact Store — Typed Pydantic State")

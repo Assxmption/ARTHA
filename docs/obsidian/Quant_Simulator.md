@@ -36,5 +36,3 @@ Generates `TradeOrder` objects and tracks `Position` state:
 
 ## Parent Linkages
 - Reads from [[Data_Layer]] (prices, fundamentals).
-- Optimizes target weights via [[Portfolio_Optimizer]].
-- Passes through risk gates via [[Risk_Manager]].

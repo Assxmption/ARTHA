@@ -86,7 +86,7 @@ def test_operator_only_routes(prod_auth, client):
     owner = {"Authorization": f"Bearer {_token(email='owner@example.com')}"}
     member = {"Authorization": f"Bearer {_token(email='someone@example.com')}"}
     for method, path in [("post", "/api/kite/logout"), ("post", "/api/kite/login-url"),
-                         ("post", "/api/paper/run"), ("post", "/api/paper-trade/reset"),
+                         ("post", "/api/paper/run"),
                          ("post", "/api/screener/build"), ("post", "/api/screener/refresh"),
                          ("post", "/api/quant/live/refresh")]:
         assert getattr(client, method)(path).status_code == 401, path

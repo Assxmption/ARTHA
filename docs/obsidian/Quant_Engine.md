@@ -32,8 +32,6 @@ The Quant Engine executes its models, validates them against out-of-sample walk-
 
 ### 3. Outlier Hygiene & Risk Controls
 - **[[Robust_Outlier_Detection]]**: Operationalization of AGENTS.md Rule 7. Separates bad data ingestion glitches (3-signal validation) from genuine large moves and NSE circuit freezes ($\pm 5\%, \pm 10\%, \pm 20\%$).
-- **[[Risk_Manager]]**: 6-layer defense system enforcing maximum drawdown constraints, volatility limits, and circuit breaker halts.
-- **[[Portfolio_Optimizer]]**: Mean-variance and risk-parity asset allocation using Ledoit-Wolf shrinkage covariance.
 
 ### 4. Backtesting & Portfolio Aggregation
 - **[[Walk_Forward_Backtester]]**: Anchored walk-forward out-of-sample gate (Rule 6).
