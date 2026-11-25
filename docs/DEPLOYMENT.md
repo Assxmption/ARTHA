@@ -48,8 +48,9 @@ visitors, so page views don't re-spend quota.
    access — but if any older build was ever reachable from a network, treat
    Groq, Gemini, OpenAI/Serper, the Kite API secret, and the Supabase JWT secret
    as compromised and rotate them.
-2. Run `supabase/rls_watchlists.sql` in the Supabase SQL editor (row-level
-   security: users can only see their own watchlists).
+2. Row-level security on `watchlists` (users see only their own lists) was
+   verified on the live project on 2026-11-25. `supabase/rls_watchlists.sql`
+   records the policies; run it only for a new Supabase project.
 3. In Supabase → Authentication: require email confirmation; set the minimum
    password length to 12; enable "Secure password change". If this is a
    personal showcase, consider disabling public sign-ups.

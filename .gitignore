@@ -85,3 +85,6 @@ Desktop.ini
 **/.env
 **/.env.*
 !**/.env.example
+
+# Generated AI analysis reports (kept locally, not in the repo)
+data/Reports/analysis_*
