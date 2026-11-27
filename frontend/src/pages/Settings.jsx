@@ -12,6 +12,7 @@ import {
 import { clearActiveSymbol, useActiveSymbol } from '../lib/activeSymbol';
 import { INTERVALS, OVERLAYS, PANES } from '../components/CandlestickChart';
 import { KEY_FORMATS, clearLlmKeys, getLlmKeys, isRemembered, maskKey, setLlmKeys } from '../lib/llmKeys';
+import { A_CODE, OTP_LENGTH, cleanCode, friendlyAuthError, passwordRules, passwordValid } from '../lib/authPolicy';
 import { apiFetch } from '../lib/api';
 
 // Every control on this page does something real: display preferences are
@@ -154,7 +155,7 @@ function Notice({ notice }) {
 
 export default function Settings() {
   const prefs = usePreferences();
-  const { user, session, signOut, resetPassword } = useAuth();
+  const { user, session, signOut, resetPassword, updatePassword, requestReauthCode } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const rememberedSymbol = useActiveSymbol();
@@ -201,7 +202,8 @@ export default function Settings() {
         </nav>
 
         <div className="space-y-6 min-w-0 max-w-4xl">
-          <AccountSection user={user} recovery={recovery} signOut={signOut} resetPassword={resetPassword} navigate={navigate} />
+          <AccountSection user={user} recovery={recovery} signOut={signOut} resetPassword={resetPassword}
+            updatePassword={updatePassword} requestReauthCode={requestReauthCode} navigate={navigate} />
           <BrokerSection session={session} />
           <AiKeysSection session={session} />
           <AppearanceSection prefs={prefs} set={set} />
@@ -219,29 +221,44 @@ export default function Settings() {
 
 // ── Account ────────────────────────────────────────────────────────────────────
 
-function AccountSection({ user, recovery, signOut, resetPassword, navigate }) {
+function AccountSection({ user, recovery, signOut, resetPassword, updatePassword, requestReauthCode, navigate }) {
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
+  const [code, setCode] = useState('');
+  const [needCode, setNeedCode] = useState(false);
   const [busy, setBusy] = useState(null);
   const [notice, setNotice] = useState(recovery ? { ok: true, text: 'Recovery link accepted — choose a new password below.' } : null);
 
-  const rules = [
-    // Same policy as sign-up (pages/Auth.jsx).
-    [pw.length >= 12, 'At least 12 characters'],
-    [/[A-Za-z]/.test(pw) && /[0-9]/.test(pw), 'Letters and numbers'],
-    [/[^A-Za-z0-9]/.test(pw), 'At least one symbol'],
-    [pw.length > 0 && pw === pw2, 'Both entries match'],
-  ];
-  const valid = rules.every(([ok]) => ok);
+  // Same policy as sign-up (lib/authPolicy.js).
+  const rules = passwordRules(pw, pw2);
+  const valid = passwordValid(pw, pw2) && (!needCode || cleanCode(code).length >= 6);
+
+  const sendCode = async () => {
+    setBusy('code');
+    const { error } = await requestReauthCode();
+    setBusy(null);
+    if (error) setNotice({ ok: false, text: friendlyAuthError(error) });
+    else { setNeedCode(true); setNotice({ ok: true, text: `We emailed ${A_CODE} confirmation code to ${user.email}.` }); }
+  };
 
   const changePassword = async (e) => {
     e.preventDefault();
     if (!valid) return;
     setBusy('pw');
-    const { error } = await supabase.auth.updateUser({ password: pw });
+    const { error } = await updatePassword(pw, needCode ? cleanCode(code) : undefined);
     setBusy(null);
-    if (error) setNotice({ ok: false, text: error.message });
-    else { setPw(''); setPw2(''); setNotice({ ok: true, text: 'Password updated.' }); }
+    if (error) {
+      // With Supabase's "Secure password change" on, a session that isn't
+      // fresh must confirm with an emailed code first.
+      if (error.code === 'reauthentication_needed' || /reauthenticat/i.test(error.message)) {
+        await sendCode();
+        return;
+      }
+      setNotice({ ok: false, text: friendlyAuthError(error) });
+      return;
+    }
+    setPw(''); setPw2(''); setCode(''); setNeedCode(false);
+    setNotice({ ok: true, text: 'Password updated. Other devices stay signed in until you sign them out below.' });
   };
 
   const sendReset = async () => {
@@ -292,8 +309,18 @@ function AccountSection({ user, recovery, signOut, resetPassword, navigate }) {
               <li key={text} className={ok ? 'text-secondary' : 'text-outline'}>{ok ? '✓' : '○'} {text}</li>
             ))}
           </ul>
+          {needCode && (
+            <div className="max-w-xs space-y-1">
+              <input type="text" inputMode="numeric" autoComplete="one-time-code" placeholder={'0'.repeat(OTP_LENGTH)}
+                value={code} onChange={(e) => setCode(cleanCode(e.target.value))} aria-label="Confirmation code from email"
+                className="w-full bg-surface-container-low border border-outline-variant px-3 py-2 font-mono text-sm tracking-[0.4em] text-center text-on-surface focus:outline-none focus:border-primary" />
+              <button type="button" onClick={sendCode} disabled={busy === 'code'} className="font-mono text-[10px] text-primary hover:underline disabled:text-outline">
+                {busy === 'code' ? 'Sending…' : 'Send a new code'}
+              </button>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" tone="primary" disabled={!valid || busy === 'pw'}>{busy === 'pw' ? 'Updating…' : 'Update password'}</Button>
+            <Button type="submit" tone="primary" disabled={!valid || busy === 'pw'}>{busy === 'pw' ? 'Updating…' : needCode ? 'Confirm & update password' : 'Update password'}</Button>
             <Button onClick={sendReset} disabled={busy === 'reset'}><Mail size={11} /> {busy === 'reset' ? 'Sending…' : 'Email me a reset link'}</Button>
           </div>
         </form>

@@ -31,6 +31,7 @@ export default function PaperTrading() {
   const [report, setReport] = useState(null);
   const [error, setError] = useState(null);
   const [book, setBook] = useState('validated');
+  const [showExperiments, setShowExperiments] = useState(false);
   const [running, setRunning] = useState(false);
   const [downloading, setDownloading] = useState(null);
   const [orderFilter, setOrderFilter] = useState('');
@@ -103,9 +104,21 @@ export default function PaperTrading() {
     );
   }
 
-  const books = report.books || [];
+  const allBooks = report.books || [];
+  const validatedBooks = allBooks.filter((b) => b.validated);
+  const experimentBooks = allBooks.filter((b) => !b.validated);
+  const books = showExperiments ? allBooks : validatedBooks;
   const current = books.find((b) => b.book === book) || books[0];
-  const combined = report.combined || {};
+  const sumOf = (list, key) => list.reduce((a, b) => a + (b[key] || 0), 0);
+  const vSum = {
+    capital: sumOf(validatedBooks, 'initial_capital'), nav: sumOf(validatedBooks, 'nav'),
+    net: sumOf(validatedBooks, 'total_pnl'), gross: sumOf(validatedBooks, 'gross_pnl'),
+    costs: sumOf(validatedBooks, 'costs_paid'), orders: sumOf(validatedBooks, 'orders_count'),
+  };
+  const epoch = report.epoch || {};
+  const restatement = (report.events || []).filter((e) => e.kind === 'restatement').slice(-1)[0];
+  const research = report.research || {};
+  const intra = research.intraday;
   const sched = report.scheduler || {};
   const lastRun = report.last_runs?.[0];
   const orders = [...(current?.orders || [])].reverse()
@@ -118,7 +131,7 @@ export default function PaperTrading() {
         <div>
           <h1 className="font-display text-3xl text-on-surface">Paper Trading</h1>
           <p className="text-outline text-xs mt-1 font-mono">
-            Simulated orders only — ARTHA never places a real order. Signals from the live quant engine, filled at market price + 15 bp.
+            Simulated orders only — ARTHA never places a real order. Live Kite prices; every fill pays modelled Indian trading costs.
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-3 font-mono text-[11px]">
             <span className="flex items-center gap-1.5 px-2 py-1 border border-outline-variant bg-surface">
@@ -143,30 +156,96 @@ export default function PaperTrading() {
 
       {error && <p className="font-mono text-xs text-error border border-error/40 px-3 py-2">{error}</p>}
 
-      {/* Combined */}
+      {epoch.epoch > 1 && restatement && (
+        <div className="px-3 py-2 border border-primary/40 bg-primary/5 font-mono text-[11px] text-on-surface-variant">
+          <span className="text-primary font-bold">Epoch {epoch.epoch}</span> · books restated {when(epoch.started_at)}. {restatement.message}
+          <span className="text-outline"> Previous epoch archived (manifest: {restatement.ref}).</span>
+        </div>
+      )}
+
+      {/* Validated books — the headline */}
       <section>
-        <h2 className="font-ui text-[10px] uppercase tracking-widest text-outline mb-2">All books combined <span className="normal-case tracking-normal">— includes the unvalidated shadow book</span></h2>
+        <h2 className="font-ui text-[10px] uppercase tracking-widest text-outline mb-2">Validated books <span className="normal-case tracking-normal">— only signals that passed the walk-forward out-of-sample gate</span></h2>
         <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
-          <Stat label="Start capital" value={moneyShort(combined.initial_capital)} />
-          <Stat label="NAV" value={moneyShort(combined.nav)} />
-          <Stat label="Total P&L" value={money(combined.total_pnl)} sub={pct(combined.total_return_pct, 3)} cls={tone(combined.total_pnl)} />
-          <Stat label="Realized" value={money(combined.realized_pnl)} cls={tone(combined.realized_pnl)} />
-          <Stat label="Unrealized" value={money(combined.unrealized_pnl)} cls={tone(combined.unrealized_pnl)} />
-          <Stat label="Orders placed" value={inr0.format(combined.orders_count || 0)} />
+          <Stat label="Start capital" value={moneyShort(vSum.capital)} />
+          <Stat label="NAV" value={moneyShort(vSum.nav)} />
+          <Stat label="P&L after costs" value={money(vSum.net)} sub="official" cls={tone(vSum.net)} />
+          <Stat label="P&L before costs" value={money(vSum.gross)} sub="diagnostic" cls={tone(vSum.gross)} />
+          <Stat label="Costs paid" value={money(vSum.costs)} />
+          <Stat label="Orders" value={inr0.format(vSum.orders)} sub={vSum.orders === 0 ? 'flat = no validated signal active' : undefined} />
         </div>
       </section>
 
-      {/* Book tabs */}
-      <div className="flex gap-1 border-b border-outline-variant">
-        {books.map((b) => (
-          <button key={b.book} onClick={() => setBook(b.book)}
-            className={`px-4 py-2 font-ui text-[11px] uppercase tracking-widest border-b-2 -mb-px flex items-center gap-2 ${b.book === current?.book ? 'border-primary text-on-surface' : 'border-transparent text-outline hover:text-on-surface'}`}>
-            {b.validated ? <ShieldCheck size={13} className="text-emerald-500" /> : <AlertTriangle size={13} className="text-amber-500" />}
-            {b.label}
-            <span className="font-mono normal-case tracking-normal text-outline">{b.orders_count}</span>
-          </button>
-        ))}
+      {/* Rigor + cost reality */}
+      <div className="grid lg:grid-cols-2 gap-3">
+        <section className="bg-surface border border-outline-variant p-3 font-mono text-[11px] space-y-1.5">
+          <h2 className="font-ui text-[10px] uppercase tracking-widest text-on-surface flex items-center gap-1.5"><ShieldCheck size={12} className="text-emerald-500" /> Validation gate</h2>
+          {research.gate && (
+            <p className="text-on-surface-variant">
+              Out-of-sample Sharpe ≥ {research.gate.min_oos_sharpe} (after a {Math.round(research.gate.risk_free_rate * 100)}% risk-free rate),
+              max drawdown ≤ {Math.round(research.gate.max_oos_drawdown * 100)}%, ≥ {research.gate.min_oos_sessions} out-of-sample sessions.
+            </p>
+          )}
+          <p className="text-outline">Strategies that fail it never enter a validated book. They may only run as clearly labelled experiments.</p>
+          {intra && (
+            <p className="text-on-surface-variant">Intraday research: {Object.values(intra.strategies).filter((x) => x.validated).length} of {intra.hypotheses_tested} predeclared hypotheses passed (OOS {intra.oos?.[0]} → {intra.oos?.[1]}).</p>
+          )}
+        </section>
+        {intra && (
+          <section className="bg-surface border border-outline-variant p-3 font-mono text-[11px]">
+            <h2 className="font-ui text-[10px] uppercase tracking-widest text-on-surface mb-2 flex items-center gap-1.5"><AlertTriangle size={12} className="text-amber-500" /> Why most retail intraday strategies fail</h2>
+            <p className="text-outline mb-2">Edge earned per ₹ traded, before costs, vs what each ₹ traded costs (STT, fees, stamp, GST, slippage ≈ {intra.cost_per_unit_turnover_bp} bp):</p>
+            <table className="w-full">
+              <tbody>
+                {Object.entries(intra.strategies).map(([name, st]) => {
+                  const edge = st.gross_edge_bp_per_unit_turnover;
+                  const cost = intra.cost_per_unit_turnover_bp || 1;
+                  const w = Math.min(100, Math.max(0, (Math.abs(edge) / cost) * 100));
+                  return (
+                    <tr key={name} className="align-middle">
+                      <td className="py-0.5 pr-2 text-on-surface-variant whitespace-nowrap">{name}</td>
+                      <td className="w-full">
+                        <div className="h-2 bg-outline-variant/30 relative" title={`${edge} bp vs ${cost} bp`}>
+                          <div className={`h-2 ${edge > 0 ? 'bg-emerald-500/70' : 'bg-rose-500/70'}`} style={{ width: `${w}%` }} />
+                        </div>
+                      </td>
+                      <td className={`pl-2 text-right whitespace-nowrap ${tone(edge)}`}>{edge > 0 ? '+' : ''}{edge} bp</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <p className="text-outline mt-2">Full bar = the cost of trading. Even the best pattern earns about a tenth of it. Since 1 Apr 2026, futures STT is 0.05% on sells, so cheaper instruments only partly close the gap.</p>
+          </section>
+        )}
       </div>
+
+      {/* Book tabs */}
+      <div className="flex flex-wrap items-end justify-between gap-2 border-b border-outline-variant">
+        <div className="flex flex-wrap gap-1">
+          {books.map((b) => (
+            <button key={b.book} onClick={() => setBook(b.book)}
+              className={`px-4 py-2 font-ui text-[11px] uppercase tracking-widest border-b-2 -mb-px flex items-center gap-2 ${b.book === current?.book ? 'border-primary text-on-surface' : 'border-transparent text-outline hover:text-on-surface'}`}>
+              {b.validated ? <ShieldCheck size={13} className="text-emerald-500" /> : <AlertTriangle size={13} className="text-amber-500" />}
+              {b.label}
+              <span className="font-mono normal-case tracking-normal text-outline">{b.orders_count}</span>
+            </button>
+          ))}
+        </div>
+        {experimentBooks.length > 0 && (
+          <button onClick={() => { setShowExperiments((v) => !v); if (showExperiments && !current?.validated) setBook('validated'); }}
+            className="mb-1 font-ui text-[10px] uppercase tracking-widest text-outline hover:text-primary">
+            {showExperiments ? 'Hide experiments' : `Show experiments (${experimentBooks.length} unvalidated forward tests)`}
+          </button>
+        )}
+      </div>
+
+      {showExperiments && intra && (
+        <div className="px-3 py-2 border border-amber-500/40 bg-amber-500/5 font-mono text-[10px] text-on-surface-variant space-y-0.5">
+          <p className="text-amber-600 dark:text-amber-400">{intra.admission_rule}</p>
+          {Object.entries(intra.strategies).map(([n, st]) => <p key={n}>• {n}: {st.admission?.reason}</p>)}
+        </div>
+      )}
 
       {current && (
         <>
@@ -176,10 +255,10 @@ export default function PaperTrading() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
             <Stat label="NAV" value={moneyShort(current.nav)} />
-            <Stat label="Total P&L" value={money(current.total_pnl)} sub={pct(current.total_return_pct, 3)} cls={tone(current.total_pnl)} />
-            <Stat label="Realized" value={money(current.realized_pnl)} cls={tone(current.realized_pnl)} />
-            <Stat label="Unrealized" value={money(current.unrealized_pnl)} cls={tone(current.unrealized_pnl)} />
+            <Stat label="P&L after costs" value={money(current.total_pnl)} sub={pct(current.total_return_pct, 3)} cls={tone(current.total_pnl)} />
+            <Stat label="P&L before costs" value={money(current.gross_pnl)} sub="diagnostic" cls={tone(current.gross_pnl)} />
             <Stat label="Costs paid" value={money(current.costs_paid)} />
+            <Stat label="Unrealized" value={money(current.unrealized_pnl)} cls={tone(current.unrealized_pnl)} />
             <Stat label="Cash" value={moneyShort(current.cash)} />
             <Stat label="Long / short" value={`${moneyShort(current.long_value)} / ${moneyShort(current.short_value)}`} />
             <Stat label="Orders" value={`${current.orders_count}`} sub={`${current.buys} buy · ${current.sells} sell`} />

@@ -110,34 +110,20 @@ class SupabaseAuthMiddleware(BaseHTTPMiddleware):
         return None
 
     def _validate_token(self, token: str) -> Optional[dict]:
-        """Validate a Supabase JWT and return claims."""
-        if not self.jwt_secret:
-            return None
+        """Validate a Supabase JWT (ES256/RS256 via JWKS, or legacy HS256) and return claims."""
+        from app.security.auth import auth_configured, decode_supabase_jwt
 
+        if not auth_configured():
+            return None
         try:
-            payload = jwt.decode(
-                token,
-                self.jwt_secret,
-                algorithms=[self.algorithm],
-                audience="authenticated",
-                options={
-                    "verify_exp": True,
-                    "verify_aud": True,
-                },
-            )
-            return payload
+            return decode_supabase_jwt(token)
         except jwt.ExpiredSignatureError:
             logger.debug("JWT expired")
-            return None
-        except jwt.InvalidAudienceError:
-            logger.debug("JWT audience mismatch")
-            return None
-        except jwt.DecodeError as e:
-            logger.debug("JWT decode error: %s", e)
-            return None
-        except Exception as e:
-            logger.warning("JWT validation error: %s", e)
-            return None
+        except jwt.PyJWTError as e:
+            logger.info("JWT rejected: %s", type(e).__name__)
+        except Exception as e:  # network trouble fetching JWKS, malformed token…
+            logger.warning("JWT validation error: %s", type(e).__name__)
+        return None
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path

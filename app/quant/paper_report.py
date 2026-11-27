@@ -91,6 +91,8 @@ def build_report(ledger: PaperLedger, now: Optional[datetime] = None, scheduler_
             "nav": _r(nav), "total_pnl": _r(total_pnl), "total_return_pct": _r(total_pnl / capital * 100, 4),
             "realized_pnl": _r(realized), "unrealized_pnl": _r(val["unrealized_pnl"]),
             "costs_paid": _r(cost), "turnover": _r(turnover),
+            # Before costs = what the raw signal earned at observed prices; after costs (total_pnl) is official.
+            "gross_pnl": _r(total_pnl + cost),
             "orders_count": len(orders), "buys": sum(o["side"] == "BUY" for o in orders),
             "sells": sum(o["side"] == "SELL" for o in orders), "open_positions": len(positions),
             "first_order_at": orders[0]["placed_at"] if orders else None,
@@ -108,12 +110,19 @@ def build_report(ledger: PaperLedger, now: Optional[datetime] = None, scheduler_
         "generated_at": now.isoformat(),
         "disclaimer": DISCLAIMER,
         "notes": [SHORT_NOTE,
-                  f"Fills: reference price ± {COST_BPS:g} bp (5 bp brokerage + 10 bp impact, as in the backtests). "
-                  f"Orders are filled only during NSE hours against a price observed within "
+                  f"Daily books fill at the reference price ± {COST_BPS:g} bp (as in the daily backtests). Intraday "
+                  "books fill with side-aware NSE intraday costs (STT 0.025 % on sells, exchange, SEBI, stamp, GST, "
+                  f"3 bp slippage). Orders fill only during NSE hours against a price observed within "
                   f"{int(MAX_PRICE_AGE.total_seconds() // 60)} minutes.",
-                  "Signals come from the live engine's daily close; orders fill in the next session.",
-                  "The shadow book is UNVALIDATED (it fails the walk-forward OOS gate) and is reported only as a "
-                  "forward test, separately from the validated book."],
+                  "Before-cost P&L is a diagnostic of the raw signal at observed prices; after-cost P&L is the "
+                  "official figure (real orders pay these charges even in a paper simulation's real-money twin).",
+                  "Daily signals come from the live engine's last completed close; intraday signals from completed "
+                  "5-minute bars. Shadow books are UNVALIDATED forward tests, reported separately.",
+                  *[f"Restatement (epoch {e['epoch']} started {e['at'][:16].replace('T', ' ')}): {e['message']} "
+                    f"Archive manifest: {e['ref']}" for e in ledger.events() if e["kind"] == "restatement"]],
+        "epoch": ledger.epoch(),
+        "events": ledger.events(),
+        "research": _research_summary(),
         "scheduler": scheduler_status,
         "last_runs": ledger.runs(10),
         "combined": {
@@ -122,11 +131,44 @@ def build_report(ledger: PaperLedger, now: Optional[datetime] = None, scheduler_
             "total_return_pct": _r((combined_nav / combined_capital - 1) * 100, 4) if combined_capital else None,
             "realized_pnl": _r(sum(b["realized_pnl"] for b in books)),
             "unrealized_pnl": _r(sum(b["unrealized_pnl"] for b in books)),
+            "gross_pnl": _r(sum(b["gross_pnl"] for b in books)),
+            "costs_paid": _r(sum(b["costs_paid"] for b in books)),
             "orders_count": sum(b["orders_count"] for b in books),
             "note": "Sum of all books, including the UNVALIDATED shadow book.",
         },
         "books": books,
     }
+
+
+def _research_summary() -> dict:
+    """Gate constants and the latest intraday validation, straight from code and report JSON."""
+    from app.quant import backtest
+
+    out: dict = {"gate": {"min_oos_sharpe": backtest.MIN_OOS_SHARPE, "max_oos_drawdown": backtest.MAX_OOS_DRAWDOWN,
+                          "min_oos_sessions": backtest.MIN_OOS_TRADING_DAYS, "risk_free_rate": 0.06}}
+    try:
+        from app.quant.intraday_paper import ADMISSION_RULE, admission, latest_validation
+
+        rep = latest_validation()
+    except Exception:
+        rep = None
+    if rep:
+        adm = admission(rep)
+        out["intraday"] = {
+            "report_file": rep.get("_file"), "generated_at": rep.get("generated_at"),
+            "hypotheses_tested": rep.get("hypotheses_tested"), "oos": rep.get("data", {}).get("oos"),
+            "admission_rule": ADMISSION_RULE,
+            "cost_per_unit_turnover_bp": next(iter(rep["strategies"].values())).get("avg_cost_bp_per_unit_turnover"),
+            "strategies": {
+                n: {"description": r.get("description"), "validated": r.get("validated"),
+                    "oos_sharpe": r["oos"].get("sharpe_ratio"),
+                    "oos_gross_sharpe": r.get("oos_gross_no_costs", {}).get("sharpe_ratio"),
+                    "gross_edge_bp_per_unit_turnover": r.get("gross_edge_bp_per_unit_turnover"),
+                    "train_gross_mean_bp": r.get("train_gross_mean_bp"),
+                    "admission": adm.get(n)}
+                for n, r in rep.get("strategies", {}).items()},
+        }
+    return out
 
 
 def _position_row(book: str, p: PositionState, marks: dict, targets: dict, now: datetime) -> dict:
@@ -166,7 +208,7 @@ def _position_row(book: str, p: PositionState, marks: dict, targets: dict, now: 
 ORDER_COLUMNS = [
     ("id", "Order #"), ("book", "Book"), ("placed_at", "Placed at (IST)"), ("symbol", "Symbol"),
     ("side", "Side"), ("quantity", "Qty"), ("ref_price", "Market price"), ("fill_price", "Fill price"),
-    ("cost_bps", "Cost (bp)"), ("notional", "Notional ₹"), ("position_before", "Position before"),
+    ("cost_bps", "Cost (bp)"), ("cost_inr", "Cost ₹"), ("notional", "Notional ₹"), ("position_before", "Position before"),
     ("position_after", "Position after"), ("realized_pnl", "Realized P&L ₹"), ("price_source", "Price source"),
     ("price_observed_at", "Price observed at"), ("signal_as_of", "Signal close"), ("signal_ref", "Signal"),
     ("reason", "Reason"),
@@ -181,7 +223,8 @@ POSITION_COLUMNS = [
 ]
 SUMMARY_COLUMNS = [
     ("label", "Book"), ("validated", "Validated"), ("initial_capital", "Start capital ₹"), ("nav", "NAV ₹"),
-    ("total_pnl", "Total P&L ₹"), ("total_return_pct", "Total return %"), ("realized_pnl", "Realized ₹"),
+    ("total_pnl", "P&L after costs ₹"), ("total_return_pct", "Total return %"), ("gross_pnl", "P&L before costs ₹"),
+    ("realized_pnl", "Realized ₹"),
     ("unrealized_pnl", "Unrealized ₹"), ("costs_paid", "Costs paid ₹"), ("cash", "Cash ₹"),
     ("long_value", "Long value ₹"), ("short_value", "Short value ₹"), ("gross_exposure", "Gross exposure ₹"),
     ("orders_count", "Orders"), ("buys", "Buys"), ("sells", "Sells"), ("open_positions", "Open positions"),
@@ -202,7 +245,8 @@ NAV_COLUMNS = [
 def table(report: dict, name: str) -> tuple[list[tuple[str, str]], list[dict]]:
     books = report["books"]
     if name == "orders":
-        return ORDER_COLUMNS, [o for b in books for o in b["orders"]]
+        return ORDER_COLUMNS, [{**o, "cost_inr": round(abs(o["fill_price"] - o["ref_price"]) * o["quantity"], 2)}
+                               for b in books for o in b["orders"]]
     if name == "positions":
         return POSITION_COLUMNS, [p for b in books for p in b["positions"]]
     if name == "summary":
@@ -402,14 +446,18 @@ def to_pdf(report: dict) -> bytes:
     rows = []
     for b in report["books"]:
         rows.append([b["label"], "Yes" if b["validated"] else "NO", money(b["initial_capital"]), money(b["nav"]),
-                     money(b["total_pnl"]), _fmt(b["total_return_pct"], pct=True), money(b["realized_pnl"]),
-                     money(b["unrealized_pnl"]), money(b["costs_paid"]), b["orders_count"], b["open_positions"]])
+                     money(b["total_pnl"]), _fmt(b["total_return_pct"], pct=True), money(b["gross_pnl"]),
+                     money(b["costs_paid"]), money(b["unrealized_pnl"]), b["orders_count"], b["open_positions"]])
     c = report["combined"]
     rows.append(["All books (incl. unvalidated)", "mixed", money(c["initial_capital"]), money(c["nav"]),
-                 money(c["total_pnl"]), _fmt(c["total_return_pct"], pct=True), money(c["realized_pnl"]),
-                 money(c["unrealized_pnl"]), "", c["orders_count"], ""])
-    story.append(tbl(["Book", "Validated", "Start capital", "NAV", "Total P&L", "Return", "Realized",
-                      "Unrealized", "Costs", "Orders", "Open"], rows,
+                 money(c["total_pnl"]), _fmt(c["total_return_pct"], pct=True), money(c["gross_pnl"]),
+                 money(c["costs_paid"]), money(c["unrealized_pnl"]), c["orders_count"], ""])
+    ep = report.get("epoch") or {}
+    if ep.get("epoch", 1) > 1:
+        story.append(Paragraph(escape(f"Epoch {ep['epoch']} — books restated {str(ep.get('started_at'))[:16].replace('T', ' ')}; "
+                                      f"the previous epoch is archived (see notes)."), body))
+    story.append(tbl(["Book", "Validated", "Start capital", "NAV", "P&L after costs", "Return", "P&L before costs",
+                      "Costs", "Unrealized", "Orders", "Open"], rows,
                      [52 * mm, 15 * mm, 28 * mm, 28 * mm, 24 * mm, 16 * mm, 22 * mm, 22 * mm, 24 * mm, 13 * mm, 11 * mm]))
     for b in report["books"]:
         m = b["metrics"]

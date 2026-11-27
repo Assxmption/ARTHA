@@ -116,7 +116,8 @@ def test_production_config_check(monkeypatch):
 
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("AUTH_REQUIRED", "false")
-    monkeypatch.delenv("SUPABASE_JWT_SECRET", raising=False)
+    for var in ("SUPABASE_JWT_SECRET", "SUPABASE_URL", "VITE_SUPABASE_URL"):
+        monkeypatch.delenv(var, raising=False)
     assert len(check_production_config()) == 2
     monkeypatch.setenv("AUTH_REQUIRED", "true")
     monkeypatch.setenv("SUPABASE_JWT_SECRET", SECRET)
@@ -168,3 +169,42 @@ def test_rate_limiter_memory_is_bounded():
     rl._windows = {"old": __import__("collections").deque([now - 120])}
     rl._sweep(now)
     assert rl._windows == {}
+
+
+def test_es256_tokens_verified_via_pinned_jwks(monkeypatch):
+    """Supabase's newer signing keys (ES256) are verified against the project's JWKS."""
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from fastapi import HTTPException
+
+    import app.security.auth as auth
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    other = ec.generate_private_key(ec.SECP256R1())
+    monkeypatch.setenv("SUPABASE_URL", "https://abcdefghijklmnop.supabase.co")
+    monkeypatch.delenv("SUPABASE_JWT_SECRET", raising=False)
+    seen = {}
+
+    class FakeJWKS:
+        def get_signing_key_from_jwt(self, token):
+            return type("K", (), {"key": key.public_key()})()
+
+    def fake_client(url):
+        seen["url"] = url
+        return FakeJWKS()
+
+    monkeypatch.setattr(auth, "_jwks_client", fake_client)
+    claims = {"sub": "u1", "aud": "authenticated", "role": "authenticated", "exp": int(_time.time()) + 600,
+              "email": "owner@example.com", "iss": "https://evil.example.com/auth/v1"}
+    good = _jwt.encode(claims, key, algorithm="ES256", headers={"kid": "k1"})
+    assert auth.verify_token(good)["sub"] == "u1"
+    # The JWKS URL comes from config, never from the token's issuer.
+    assert seen["url"] == "https://abcdefghijklmnop.supabase.co/auth/v1/.well-known/jwks.json"
+    forged = _jwt.encode(claims, other, algorithm="ES256", headers={"kid": "k1"})
+    with pytest.raises(HTTPException):
+        auth.verify_token(forged)
+    with pytest.raises(HTTPException):     # "none" alg is never accepted
+        auth.verify_token(_jwt.encode(claims, None, algorithm="none"))
+    monkeypatch.delenv("SUPABASE_URL")
+    monkeypatch.delenv("VITE_SUPABASE_URL", raising=False)
+    with pytest.raises(HTTPException):     # no pinned JWKS → refuse, don't guess
+        auth.verify_token(good)
