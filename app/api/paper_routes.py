@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 
@@ -21,7 +22,11 @@ router = APIRouter(prefix="/api/paper", tags=["paper-books"])
 
 
 def _report() -> dict:
-    return paper_report.build_report(paper_scheduler.engine().ledger, scheduler_status=paper_scheduler.status())
+    from app.quant.intraday_paper import intraday_scheduler
+
+    status = paper_scheduler.status()
+    status["intraday"] = intraday_scheduler.status()
+    return paper_report.build_report(paper_scheduler.engine().ledger, scheduler_status=status)
 
 
 @router.get("/status")
@@ -84,3 +89,73 @@ async def export(fmt: str, table: str = Query("orders", max_length=20), user=Dep
 async def books():
     return [{"book": s.key, "label": s.label, "validated": s.validated, "description": s.description}
             for s in BOOKS.values()]
+
+
+@router.get("/intraday")
+async def intraday_status():
+    """Intraday engine state and which strategies are validated vs shadow (latest OOS report)."""
+    from app.quant.intraday_paper import ADMISSION_RULE, admission, book_assignment, intraday_scheduler, latest_validation
+
+    rep = await run_in_threadpool(latest_validation)
+    summary = {}
+    for name, r in (rep or {}).get("strategies", {}).items():
+        summary[name] = {"validated": r.get("validated"), "description": r.get("description"),
+                         "oos": {k: r["oos"].get(k) for k in ("sharpe_ratio", "max_drawdown", "annualized_return",
+                                                              "num_trading_days", "profit_factor")}}
+    adm = admission(rep)
+    for name in summary:
+        summary[name]["admission"] = adm.get(name)
+    return {"scheduler": intraday_scheduler.status(), "assignment": book_assignment(rep),
+            "admission_rule": ADMISSION_RULE,
+            "report_file": (rep or {}).get("_file"), "strategies": summary, "order_placement": False}
+
+
+@router.post("/intraday/run")
+async def intraday_run(user=Depends(require_admin)):
+    from app.quant.intraday_paper import intraday_scheduler
+
+    try:
+        return await run_in_threadpool(intraday_scheduler.run_now)
+    except Exception:
+        raise HTTPException(500, "Intraday cycle failed; see server logs")
+
+
+class RestateRequest(BaseModel):
+    reason: str = Field(..., min_length=20, max_length=1000)
+    confirm: bool = False
+
+
+@router.post("/restate")
+async def restate(req: RestateRequest, user=Depends(require_admin)):
+    """
+    Archive the current epoch (never deleted; manifest with sha256) and restart
+    every book at ₹5 Cr. Operator only; requires confirm=true. Both schedulers
+    are paused for the duration so no cycle writes mid-restatement.
+    """
+    if not req.confirm:
+        raise HTTPException(400, "Set confirm=true to archive the ledger and restart all books.")
+    from datetime import datetime
+
+    from app.quant.intraday_paper import intraday_scheduler
+    from app.quant.paper_book import IST
+
+    def _do():
+        with paper_scheduler._run_lock, intraday_scheduler._run_lock:
+            return paper_scheduler.engine().ledger.archive_and_restart(req.reason, datetime.now(IST))
+
+    return await run_in_threadpool(_do)
+
+
+@router.get("/archive")
+async def archives():
+    """Archived epochs with their manifests (read-only)."""
+    import json
+    from pathlib import Path
+
+    out = []
+    for m in sorted(Path("data_cache/paper/archive").glob("*.manifest.json")):
+        try:
+            out.append(json.loads(m.read_text()))
+        except (OSError, ValueError):
+            continue
+    return {"archives": out}

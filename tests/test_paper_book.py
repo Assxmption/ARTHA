@@ -124,11 +124,11 @@ class Prices:
 PRICES = {"KOTAKBANK": 500.0, "PNB": 150.0, "TCS": 2500.0, "INFY": 1500.0}
 
 
-def _engine(tmp_path, dashboard=None, at=OPEN_DAY, prices=None, capital=1_00_00_000.0):
+def _engine(tmp_path, dashboard=None, at=OPEN_DAY, prices=None, capital=1_00_00_000.0, signals_as_of=None):
     clock = {"now": at}
     feed = Prices(prices or PRICES, at)
     eng = pb.PaperEngine(pb.PaperLedger(tmp_path / "ledger.db"), signals=lambda: dashboard or _dashboard(),
-                         prices=feed, now=lambda: clock["now"], capital=capital)
+                         prices=feed, now=lambda: clock["now"], capital=capital, signals_as_of=signals_as_of)
     return eng, clock, feed
 
 
@@ -181,7 +181,7 @@ def test_provisional_or_old_signals_do_not_trade(tmp_path):
     assert eng.run_cycle()["orders"] == []      # no completed-close snapshot to fall back on
     eng, _, _ = _engine(tmp_path / "old", dashboard=_dashboard(as_of="2026-11-13"))
     r = eng.run_cycle()
-    assert r["orders"] == [] and "days old" in r["note"]
+    assert r["orders"] == [] and "2026-11-23 close is required" in r["note"]
 
 
 def test_intraday_provisional_recompute_uses_last_close_snapshot(tmp_path):
@@ -200,11 +200,49 @@ def test_intraday_provisional_recompute_uses_last_close_snapshot(tmp_path):
     assert r["signal_as_of"] == "2026-11-23"
 
 
+def test_stale_signals_trigger_last_close_recompute(tmp_path):
+    # Server was down on Wednesday: Thursday's session finds only Monday's signals.
+    thursday = datetime(2026, 11, 26, 10, 0, tzinfo=IST)
+    calls = []
+
+    def recompute(day):
+        calls.append(day)
+        return _dashboard(as_of=day.isoformat())
+
+    eng, _, _ = _engine(tmp_path, dashboard=_dashboard(as_of="2026-11-23"), at=thursday, signals_as_of=recompute)
+    r = eng.run_cycle()
+    assert calls == [date(2026, 11, 25)]                       # the last completed session
+    assert r["signal_as_of"] == "2026-11-25" and r["orders"]
+    assert all(o["signal_as_of"] == "2026-11-25" for o in r["orders"] if o["book"] == "shadow")
+    eng.run_cycle()
+    assert calls == [date(2026, 11, 25)]                       # cached as a snapshot, not recomputed
+
+
+def test_stale_signals_never_trade_when_recompute_fails(tmp_path):
+    thursday = datetime(2026, 11, 26, 10, 0, tzinfo=IST)
+
+    def broken(day):
+        raise RuntimeError("yahoo down")
+
+    eng, _, _ = _engine(tmp_path, dashboard=_dashboard(as_of="2026-11-23"), at=thursday, signals_as_of=broken)
+    r = eng.run_cycle()
+    assert r["orders"] == [] and "2026-11-25 close is required" in r["note"]
+
+
+def test_signal_status_requires_last_completed_session():
+    wed = datetime(2026, 11, 25, 11, 0, tzinfo=IST)   # Tuesday 24th was a holiday
+    assert pb.signal_status({"as_of": "2026-11-23"}, wed)[0] is True
+    assert pb.signal_status({"as_of": "2026-11-20"}, wed)[0] is False
+    mon = datetime(2026, 11, 30, 10, 0, tzinfo=IST)
+    assert pb.signal_status({"as_of": "2026-11-27"}, mon)[0] is True   # Friday's close on Monday
+    assert pb.last_completed_session(datetime(2026, 11, 25, 16, 0, tzinfo=IST)) == date(2026, 11, 25)
+
+
 def test_signals_unavailable_still_marks(tmp_path):
     def boom():
         raise RuntimeError("no data")
     eng = pb.PaperEngine(pb.PaperLedger(tmp_path / "l.db"), signals=boom, prices=Prices(PRICES, OPEN_DAY),
-                         now=lambda: OPEN_DAY)
+                         now=lambda: OPEN_DAY, signals_as_of=None)
     r = eng.run_cycle()
     assert r["orders"] == [] and "unavailable" in r["note"]
 

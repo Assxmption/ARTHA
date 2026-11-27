@@ -64,7 +64,6 @@ LOCK_PATH = Path("data_cache/paper/scheduler.lock")
 INITIAL_CAPITAL = 5_00_00_000.0      # ₹5 crore per book
 COST_BPS = 15.0                       # = statarb_backtest (5 + 10) per leg; = sleeve cost_bps
 MAX_PRICE_AGE = timedelta(minutes=20)
-MAX_SIGNAL_AGE_DAYS = 5               # calendar days from signal close to fill (covers long weekends)
 MIN_TRADE_FRACTION = 0.002            # ₹1 lakh on ₹5 Cr
 DRIFT_FRACTION = 0.10
 
@@ -91,7 +90,19 @@ BOOKS: dict[str, BookSpec] = {
         "The predeclared momentum/reversal sleeve portfolio. It currently fails the validation gate and is "
         "paper-traded only as a forward test. Not a validated signal.",
     ),
+    "intraday": BookSpec(
+        "intraday", "Intraday — validated", True,
+        "Intraday (5-minute) strategies that pass the walk-forward OOS gate on Kite 5-minute history, net of "
+        "Indian intraday costs. Flat by 15:20 every day; never held overnight.",
+    ),
+    "intraday_shadow": BookSpec(
+        "intraday_shadow", "Intraday shadow (UNVALIDATED)", False,
+        "Predeclared intraday strategies that FAILED the gate, paper-traded live only as a forward test. "
+        "Flat by 15:20 every day. Not validated signals.",
+    ),
 }
+DAILY_BOOKS = ("validated", "shadow")
+INTRADAY_BOOKS = ("intraday", "intraday_shadow")
 
 
 @dataclass(frozen=True)
@@ -241,6 +252,18 @@ CREATE TABLE IF NOT EXISTS signal_snapshots (
     saved_at TEXT NOT NULL,
     payload TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    epoch INTEGER NOT NULL,
+    message TEXT NOT NULL,
+    ref TEXT
+);
 CREATE TABLE IF NOT EXISTS targets (
     book TEXT NOT NULL,
     symbol TEXT NOT NULL,
@@ -357,6 +380,12 @@ class PaperLedger:
                 (keep["as_of"], keep.get("computed_at"), now.isoformat(), json.dumps(keep, default=str)),
             )
 
+    def snapshot_for(self, as_of: str) -> Optional[dict]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT payload FROM signal_snapshots WHERE as_of = ?", (as_of,)).fetchone()
+        return json.loads(row[0]) if row else None
+
     def latest_snapshot(self) -> Optional[dict]:
         with self._lock:
             row = self._conn.execute(
@@ -421,6 +450,77 @@ class PaperLedger:
     def runs(self, limit: int = 50) -> list[dict]:
         with self._lock:
             return _rows(self._conn.execute("SELECT * FROM runs ORDER BY id DESC LIMIT ?", (limit,)))
+
+    # epochs and restatements --------------------------------------------------
+    def epoch(self) -> dict:
+        with self._lock:
+            meta = {r["key"]: r["value"] for r in _rows(self._conn.execute("SELECT * FROM meta"))}
+        return {"epoch": int(meta.get("epoch", 1)), "started_at": meta.get("epoch_started_at"),
+                "restatement_ref": meta.get("restatement_ref")}
+
+    def events(self) -> list[dict]:
+        with self._lock:
+            return _rows(self._conn.execute("SELECT * FROM events ORDER BY id"))
+
+    def archive_and_restart(self, reason: str, now: datetime, archive_dir: Path = Path("data_cache/paper/archive"),
+                            capital: float = INITIAL_CAPITAL) -> dict:
+        """
+        Close the current epoch: copy the whole ledger to ``archive_dir`` (never
+        deleted), write a manifest computed from the ledger itself, then start a
+        new epoch with every book back at ``capital``.  The restatement is
+        recorded in ``events`` and shown in every report and export.
+        """
+        import hashlib
+        import subprocess
+
+        with self._lock:
+            ep = self.epoch()["epoch"]
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            dest_path = archive_dir / f"ledger_epoch{ep}_{now.astimezone(IST):%Y%m%d_%H%M}.db"
+            dest = sqlite3.connect(str(dest_path))
+            try:
+                self._conn.backup(dest)
+            finally:
+                dest.close()
+            books = {}
+            marks = self.marks()
+            for book, meta in self.books().items():
+                positions, cash, realized, cost = self.state(book)
+                val = valuation(positions, marks)
+                nav = cash + val["long_value"] + val["short_value"]
+                books[book] = {
+                    "orders": len(self.orders(book)), "initial_capital": meta["initial_capital"],
+                    "final_nav": round(nav, 2), "total_pnl": round(nav - meta["initial_capital"], 2),
+                    "realized_pnl": round(realized, 2), "unrealized_pnl": round(val["unrealized_pnl"], 2),
+                    "costs_paid": round(cost, 2), "open_positions": len(positions),
+                }
+            try:
+                commit = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True,
+                                        timeout=5).stdout.strip() or None
+            except Exception:
+                commit = None
+            manifest = {
+                "epoch": ep, "archived_at": now.isoformat(), "reason": reason,
+                "archive_file": str(dest_path),
+                "sha256": hashlib.sha256(dest_path.read_bytes()).hexdigest(),
+                "git_commit": commit, "books": books,
+            }
+            manifest_path = dest_path.with_suffix(".manifest.json")
+            manifest_path.write_text(json.dumps(manifest, indent=1))
+            with self._conn:
+                for table in ("orders", "nav", "runs", "targets", "books"):
+                    self._conn.execute(f"DELETE FROM {table}")
+                self._conn.execute(
+                    "INSERT INTO events (at, kind, epoch, message, ref) VALUES (?, 'restatement', ?, ?, ?)",
+                    (now.isoformat(), ep + 1, reason, str(manifest_path)))
+                for k, v in (("epoch", str(ep + 1)), ("epoch_started_at", now.isoformat()),
+                             ("restatement_ref", str(manifest_path))):
+                    self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (k, v))
+            for book in BOOKS:
+                self.ensure_book(book, capital, now)
+            manifest["new_epoch"] = ep + 1
+            manifest["manifest_file"] = str(manifest_path)
+            return manifest
 
 
 # ── Signals → targets ─────────────────────────────────────────────────────────
@@ -592,6 +692,13 @@ def _default_signals() -> dict:
     return live_dashboard_cache.get()
 
 
+def _signals_as_of(day: date) -> dict:
+    """Recompute the live engine on completed bars through ``day`` only (~30 s)."""
+    from app.quant.live_dashboard import compute_live_dashboard
+
+    return compute_live_dashboard(as_of=day)
+
+
 # ── Engine ────────────────────────────────────────────────────────────────────
 
 def in_session(now: datetime) -> bool:
@@ -611,17 +718,30 @@ def is_fresh(mark: Optional[Mark], now: datetime) -> bool:
     return -timedelta(minutes=2) <= age <= MAX_PRICE_AGE   # small allowance for clock skew
 
 
+def last_completed_session(now: datetime) -> date:
+    """The most recent NSE session whose close has passed (holiday-aware)."""
+    from app.data.nse_calendar import last_close_boundary
+
+    return last_close_boundary(now).date()
+
+
 def signal_status(dashboard: dict, now: datetime) -> tuple[bool, str]:
+    """
+    Signals may drive fills only if they come from the last completed session's
+    close (signal t → fill t+1). Older signals are refused rather than traded:
+    after a missed day they would describe a book the strategy no longer holds.
+    """
     as_of = dashboard.get("as_of")
     if not as_of:
         return False, "signals unavailable"
     if dashboard.get("provisional"):
         return False, f"signals for {as_of} are provisional (session still forming)"
-    age = (now.astimezone(IST).date() - date.fromisoformat(as_of)).days
-    if age < 0:
+    signal_day = date.fromisoformat(as_of)
+    expected = last_completed_session(now)
+    if signal_day > now.astimezone(IST).date():
         return False, f"signal date {as_of} is in the future"
-    if age > MAX_SIGNAL_AGE_DAYS:
-        return False, f"signals from {as_of} are {age} days old"
+    if signal_day < expected:
+        return False, f"signals are from the {as_of} close, but the {expected} close is required"
     return True, f"signals from the {as_of} close"
 
 
@@ -650,10 +770,12 @@ class PaperEngine:
         prices: Callable[[list[str]], dict[str, Mark]] = fetch_marks,
         now: Callable[[], datetime] = lambda: datetime.now(IST),
         capital: float = INITIAL_CAPITAL,
-        books: Iterable[str] = tuple(BOOKS),
+        books: Iterable[str] = DAILY_BOOKS,
+        signals_as_of: Optional[Callable[[date], dict]] = _signals_as_of,
     ):
         self.ledger, self.signals, self.prices, self.now = ledger, signals, prices, now
         self.capital, self.books = capital, tuple(books)
+        self.signals_as_of = signals_as_of
 
     def run_cycle(self) -> dict:
         now = self.now()
@@ -670,6 +792,7 @@ class PaperEngine:
             # Intraday the live engine recomputes on a still-forming bar; fills
             # use the last completed close instead (signal t → fill t+1).
             dashboard = self.ledger.latest_snapshot() or dashboard
+        dashboard = self._ensure_last_close(dashboard, now)
         signal_ok, signal_note = signal_status(dashboard, now)
         targets = {b: TARGET_BUILDERS[b](dashboard) if dashboard else {} for b in self.books}
         if signal_ok:
@@ -712,6 +835,32 @@ class PaperEngine:
         return {"run_id": run_id, "at": now.isoformat(), "session_open": session, "traded": trade,
                 "signal_as_of": dashboard.get("as_of"), "orders": orders, "skipped": skipped,
                 "books": books, "note": note}
+
+    def _ensure_last_close(self, dashboard: dict, now: datetime) -> dict:
+        """
+        If the signals predate the last completed session (e.g. the server was
+        down on that day), compute that close's signals from completed bars
+        only. Done only during a session, when fills are possible.
+        """
+        expected = last_completed_session(now).isoformat()
+        as_of = dashboard.get("as_of")
+        if (as_of and as_of >= expected) or not in_session(now):
+            return dashboard
+        cached = self.ledger.snapshot_for(expected)
+        if cached:
+            return cached
+        if self.signals_as_of is None:
+            return dashboard
+        try:
+            fresh = self.signals_as_of(date.fromisoformat(expected)) or {}
+        except Exception as e:
+            logger.warning("Paper engine: could not compute signals for the %s close: %s", expected, e)
+            return dashboard
+        if fresh.get("as_of") == expected and not fresh.get("provisional"):
+            self.ledger.save_snapshot(fresh, now)
+            logger.info("Paper engine: computed signals for the %s close", expected)
+            return fresh
+        return dashboard
 
     def _rebalance(self, book: str, targets: dict[str, Target], marks: dict[str, Mark],
                    now: datetime, run_id: int, skipped: list) -> list[dict]:

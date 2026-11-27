@@ -70,9 +70,16 @@ async def lifespan(app: FastAPI):
 
         paper_scheduler.start()
         logger.info("  [PAPER] Paper-trading scheduler: %s (simulated orders only)", paper_scheduler.state)
+        from app.quant.intraday_paper import intraday_scheduler
+
+        intraday_scheduler.start()
+        logger.info("  [PAPER] Intraday scheduler: %s (simulated orders only)", intraday_scheduler.state)
     yield
     if paper_enabled:
         paper_scheduler.stop()
+        from app.quant.intraday_paper import intraday_scheduler
+
+        intraday_scheduler.stop()
     logger.info("Shutting down ARTHA...")
 
 
