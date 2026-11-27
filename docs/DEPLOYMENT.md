@@ -58,6 +58,51 @@ visitors, so page views don't re-spend quota.
 5. After deploy, check: `/api/health` is 200, `/docs` and `/openapi.json` are 404,
    and *Settings → Data & system status* shows "API auth enforced".
 
+## Email & one-time codes (Supabase Auth)
+
+The sign-in page supports password sign-in, **email-code sign-in**, sign-up
+verification by code, and **password reset by code**. Settings → Account changes
+the password, confirming with an emailed code when Supabase asks for it.
+
+Supabase's built-in mailer sends only ~2 emails per hour per project, so
+verification and reset emails get dropped. Use custom SMTP:
+
+1. **Pick an SMTP provider.** For a small user base without your own domain,
+   [Brevo](https://developers.brevo.com/docs/supabase-smtp-integration) works
+   well: free SMTP, ~300 emails/day, and you can send from a verified personal
+   address. ([Resend](https://resend.com) is also easy but needs your own domain
+   to email other people.) Verify current free limits on the provider's site.
+2. **Supabase → Authentication → Emails → SMTP Settings → Enable custom SMTP.**
+   Enter the provider's host, port (587), username and SMTP key, plus a sender
+   name ("ARTHA") and the verified sender address. Enter these yourself in the
+   dashboard; they are never stored in this repo.
+3. **Authentication → Rate limits:** raise "emails per hour" to suit (custom SMTP
+   starts at 30/hour).
+4. **Authentication → Emails → Templates:** make each template include the code
+   `{{ .Token }}` (the link alone does not let users type a code):
+
+   | Template | Suggested body line |
+   |---|---|
+   | Confirm sign up | `Your ARTHA verification code is <b>{{ .Token }}</b>. Or <a href="{{ .ConfirmationURL }}">confirm here</a>.` |
+   | Magic link or OTP | `Your ARTHA sign-in code is <b>{{ .Token }}</b>. It expires soon; never share it.` |
+   | Reset password | `Your ARTHA password reset code is <b>{{ .Token }}</b>. Or <a href="{{ .ConfirmationURL }}">reset here</a>.` |
+   | Reauthentication | `Your ARTHA confirmation code is <b>{{ .Token }}</b>.` |
+
+5. **Authentication → Sign In / Providers → Email:**
+   - Minimum password length **12** (the app already requires 12 + letters, numbers, a symbol).
+   - **Secure password change: on** (password changes on older sessions need an emailed code).
+   - Email OTP expiration: 600–900 seconds is plenty (default 3600).
+   - Email OTP length: the app assumes **8** (this project's setting). If you change it, set
+     `VITE_AUTH_OTP_LENGTH` in `frontend/.env` / the build args to match.
+6. **"No account with this email" messages:** run `supabase/auth_email_check.sql`
+   (already applied on the live project, 2026-11-25). It adds a rate-limited
+   check (10/hour per visitor, 300/hour total) so Forgot password and email-code
+   sign-in can say when no account uses an address; without it the app falls back
+   to neutral wording.
+7. **URL Configuration:** set Site URL to your deployed URL and add
+   `https://<your-host>/reset-password` to the redirect allow-list, so emailed
+   links work too.
+
 ## Choosing a free host (checked 2026-11-25 — verify current terms)
 
 | Host | Free resources | Fit for ARTHA |
